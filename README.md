@@ -194,7 +194,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Contact
 
 Have an urgent question or want to report a security vulnerability? Send an email to [contact@donutbrowser.com](mailto:contact@donutbrowser.com).
-
-## License
-
-This project is licensed under the AGPL-3.0 License - see the [LICENSE](LICENSE) file for details.

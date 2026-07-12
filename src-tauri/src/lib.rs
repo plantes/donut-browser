@@ -589,7 +589,7 @@ async fn add_mcp_to_claude_desktop_internal(app_handle: &tauri::AppHandle) -> Re
         "env": {}
       }
     },
-    "license": "AGPL-3.0"
+    "license": "apache-2.0"
   });
   std::fs::write(
     ext_dir.join("manifest.json"),

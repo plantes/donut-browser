@@ -8,9 +8,7 @@ Contributions are welcome! Please do not create PRs for the sake of being added 
 - Confirm no other contributors are working on the same issue
 - Check if the feature aligns with the project's goals
 
-## Contributor License Agreement
 
-By contributing, you agree your contributions will be licensed under the same terms as the project. See [Contributor License Agreement](CONTRIBUTOR_LICENSE_AGREEMENT.md). This ensures contributions can be used in the open source version (AGPL-3.0) and commercially licensed. You retain all rights to use your contributions elsewhere.
 
 ## Development Setup
 
@@ -77,7 +75,6 @@ codeql database analyze /tmp/codeql-rust --format=sarifv2.1.0 --output=/tmp/rust
 - **Tauri commands**: If you modify Tauri commands, the `test_no_unused_tauri_commands` test will catch unused ones
 - **No hardcoded colors**: Use theme CSS variables (see `src/lib/themes.ts`), never Tailwind color classes like `text-red-500`
 - **No lock file changes**: Don't update `pnpm-lock.yaml` or `Cargo.lock` unless updating dependencies is the purpose of the PR
-- **AGPL-3.0**: This project is AGPL-licensed. Derivatives must be open source with the same license
 
 ## Pull Request Guidelines
 
