@@ -99,6 +99,10 @@ pub fn get_host_os() -> String {
   }
 }
 
+pub fn is_fingerprint_os_allowed(fingerprint_os: Option<&str>) -> bool {
+  fingerprint_os.is_none_or(|os| os == get_host_os())
+}
+
 impl BrowserProfile {
   /// Get the path to the profile data directory (profiles/{uuid}/profile)
   pub fn get_profile_data_path(&self, profiles_dir: &Path) -> PathBuf {
@@ -132,5 +136,23 @@ impl BrowserProfile {
   /// Returns true if sync uses E2E encryption.
   pub fn is_encrypted_sync(&self) -> bool {
     self.sync_mode == SyncMode::Encrypted
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn fingerprint_os_is_limited_to_the_host_build() {
+    assert!(is_fingerprint_os_allowed(None));
+    let host = get_host_os();
+    assert!(is_fingerprint_os_allowed(Some(host.as_str())));
+    let other = if host == "windows" {
+      "linux"
+    } else {
+      "windows"
+    };
+    assert!(!is_fingerprint_os_allowed(Some(other)));
   }
 }

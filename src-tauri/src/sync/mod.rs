@@ -25,6 +25,38 @@ pub use scheduler::{get_global_scheduler, set_global_scheduler, SyncScheduler};
 pub use subscription::{SubscriptionManager, SyncWorkItem};
 pub use types::{SyncError, SyncResult};
 
+#[tauri::command]
+pub async fn restart_sync_service(app_handle: tauri::AppHandle) -> Result<(), String> {
+  if let Some(scheduler) = get_global_scheduler() {
+    scheduler.stop();
+  }
+
+  tauri::async_runtime::spawn(async move {
+    let mut subscription_manager = SubscriptionManager::new();
+    let work_rx = subscription_manager.take_work_receiver();
+    if let Err(error) = subscription_manager.start(app_handle.clone()).await {
+      log::warn!("Failed to start sync subscription: {error}");
+      return;
+    }
+    if let Some(work_rx) = work_rx {
+      let scheduler = std::sync::Arc::new(SyncScheduler::new());
+      set_global_scheduler(scheduler.clone());
+      scheduler.sync_all_enabled_profiles(&app_handle).await;
+      if let Ok(engine) = SyncEngine::create_from_settings(&app_handle).await {
+        if let Err(error) = engine.check_for_missing_synced_profiles(&app_handle).await {
+          log::warn!("Failed to check for missing profiles: {error}");
+        }
+        if let Err(error) = engine.check_for_missing_synced_entities(&app_handle).await {
+          log::warn!("Failed to check for missing entities: {error}");
+        }
+      }
+      scheduler.clone().start(app_handle, work_rx).await;
+      log::info!("Sync scheduler restarted");
+    }
+  });
+  Ok(())
+}
+
 /// Queue a profile sync if the profile has sync enabled. No-op otherwise.
 ///
 /// Called from profile metadata update paths so a rename / tag edit / proxy

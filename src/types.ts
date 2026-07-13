@@ -78,62 +78,6 @@ export interface SyncSettings {
   sync_token?: string;
 }
 
-/**
- * Capability/limit set derived from the plan by the backend. Features are gated
- * on these flags instead of a single "is paid?" check, so a plan like the future
- * "starter" tier (cross-OS fingerprints + cloud backup, no automation) is just
- * data. Mirrors `apps/backend/src/plans/entitlements.ts`. Resolve via
- * `getEntitlements()` — the desktop populates it, but it stays optional for
- * safety on older state.
- */
-export interface Entitlements {
-  active: boolean;
-  browserAutomation: boolean;
-  crossOsFingerprints: boolean;
-  cloudBackup: boolean;
-  teamCollaboration: boolean;
-  profileLimit: number;
-  requestsPerHour: number;
-}
-
-export interface CloudUser {
-  id: string;
-  email: string;
-  plan: string;
-  planPeriod: string | null;
-  subscriptionStatus: string;
-  profileLimit: number;
-  cloudProfilesUsed: number;
-  proxyBandwidthLimitMb: number;
-  proxyBandwidthUsedMb: number;
-  proxyBandwidthExtraMb: number;
-  teamId?: string;
-  teamName?: string;
-  teamRole?: string;
-  // This device's position among the user's active devices (oldest = 1).
-  // Ordinal 1 / isPrimaryDevice === true is the only device that can run
-  // browser automation. Optional: older backends omit them.
-  deviceOrdinal?: number | null;
-  deviceCount?: number | null;
-  isPrimaryDevice?: boolean | null;
-  // Plan-derived capabilities. The desktop resolves this before handing CloudUser
-  // to the UI; optional to stay safe on older cached state.
-  entitlements?: Entitlements;
-}
-
-export interface ProfileLockInfo {
-  profileId: string;
-  lockedBy: string;
-  lockedByEmail: string;
-  lockedAt: string;
-  expiresAt?: string;
-}
-
-export interface CloudAuthState {
-  user: CloudUser;
-  logged_in_at: string;
-}
-
 export interface ProfileSyncStatusEvent {
   profile_id: string;
   status: "disabled" | "syncing" | "synced" | "error" | "pending";
@@ -152,8 +96,6 @@ export function isSyncEnabled(profile: BrowserProfile): boolean {
   return profile.sync_mode != null && profile.sync_mode !== "Disabled";
 }
 
-export const CLOUD_PROXY_ID = "cloud-included-proxy";
-
 export interface StoredProxy {
   id: string;
   name: string;
@@ -162,16 +104,6 @@ export interface StoredProxy {
   last_sync?: number;
   is_cloud_managed?: boolean;
   is_cloud_derived?: boolean;
-  geo_country?: string;
-  geo_state?: string;
-  geo_region?: string;
-  geo_city?: string;
-  geo_isp?: string;
-}
-
-export interface LocationItem {
-  code: string;
-  name: string;
 }
 
 export interface ProfileGroup {
@@ -227,12 +159,29 @@ export interface AppUpdateProgress {
 
 export type WayfernOS = "windows" | "macos" | "linux" | "android" | "ios";
 
+export interface WayfernDisplayBaseline {
+  physical_width?: number;
+  physical_height?: number;
+  screen_width: number;
+  screen_height: number;
+  screen_avail_width: number;
+  screen_avail_height: number;
+  screen_avail_left: number;
+  screen_avail_top: number;
+  device_pixel_ratio: number;
+  screen_color_depth: number;
+  screen_pixel_depth: number;
+}
+
 export interface WayfernConfig {
   proxy?: string;
   screen_max_width?: number;
   screen_max_height?: number;
   screen_min_width?: number;
   screen_min_height?: number;
+  display_baseline?: WayfernDisplayBaseline;
+  initial_window_maximized?: boolean;
+  manual_display_fingerprint?: boolean;
   geoip?: string | boolean; // For compatibility with shared config form
   block_images?: boolean; // For compatibility with shared config form
   block_webrtc?: boolean;
@@ -263,6 +212,8 @@ export interface WayfernFingerprintConfig {
   screenHeight?: number;
   screenAvailWidth?: number;
   screenAvailHeight?: number;
+  screenAvailLeft?: number;
+  screenAvailTop?: number;
   screenColorDepth?: number;
   screenPixelDepth?: number;
   devicePixelRatio?: number;

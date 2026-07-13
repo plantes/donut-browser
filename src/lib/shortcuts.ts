@@ -35,7 +35,7 @@ export type ShortcutId =
   | "goExtensions"
   | "goGroups"
   | "goIntegrations"
-  | "goAccount"
+  | "goSync"
   | "goSettings";
 
 export const SHORTCUTS: ShortcutDef[] = [
@@ -98,8 +98,8 @@ export const SHORTCUTS: ShortcutDef[] = [
     mod: true,
   },
   {
-    id: "goAccount",
-    labelKey: "shortcuts.goAccount",
+    id: "goSync",
+    labelKey: "shortcuts.goSync",
     group: "navigation",
     key: "a",
     mod: true,

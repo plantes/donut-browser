@@ -6,16 +6,13 @@ import { getCurrent } from "@tauri-apps/plugin-deep-link";
 import { useOnborda } from "onborda";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AccountPage } from "@/components/account-page";
 import { CloneProfileDialog } from "@/components/clone-profile-dialog";
 import { CloseConfirmDialog } from "@/components/close-confirm-dialog";
 import { CommandPalette } from "@/components/command-palette";
-import { CommercialTrialModal } from "@/components/commercial-trial-modal";
 import { CookieCopyDialog } from "@/components/cookie-copy-dialog";
 import { CookieManagementDialog } from "@/components/cookie-management-dialog";
 import { CreateProfileDialog } from "@/components/create-profile-dialog";
 import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
-import { DeviceCodeVerifyDialog } from "@/components/device-code-verify-dialog";
 import { ExtensionGroupAssignmentDialog } from "@/components/extension-group-assignment-dialog";
 import { ExtensionManagementDialog } from "@/components/extension-management-dialog";
 import { GroupAssignmentDialog } from "@/components/group-assignment-dialog";
@@ -40,14 +37,13 @@ import { ShortcutsPage } from "@/components/shortcuts-page";
 import { SyncAllDialog } from "@/components/sync-all-dialog";
 import { SyncConfigDialog } from "@/components/sync-config-dialog";
 import { SyncFollowerDialog } from "@/components/sync-follower-dialog";
+import { SyncPage } from "@/components/sync-page";
 import { ThankYouDialog } from "@/components/thank-you-dialog";
 import { WayfernConfigDialog } from "@/components/wayfern-config-dialog";
 import { WayfernTermsDialog } from "@/components/wayfern-terms-dialog";
 import { WelcomeDialog } from "@/components/welcome-dialog";
 import { WindowResizeWarningDialog } from "@/components/window-resize-warning-dialog";
 import { useAppUpdateNotifications } from "@/hooks/use-app-update-notifications";
-import { useCloudAuth } from "@/hooks/use-cloud-auth";
-import { useCommercialTrial } from "@/hooks/use-commercial-trial";
 import { useGroupEvents } from "@/hooks/use-group-events";
 import type { PermissionType } from "@/hooks/use-permissions";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -59,7 +55,6 @@ import { useVersionUpdater } from "@/hooks/use-version-updater";
 import { useVpnEvents } from "@/hooks/use-vpn-events";
 import { useWayfernTerms } from "@/hooks/use-wayfern-terms";
 import { translateBackendError } from "@/lib/backend-errors";
-import { getEntitlements } from "@/lib/entitlements";
 import {
   ONBOARDING_TOUR_FINISHED_EVENT,
   setOnboardingActive,
@@ -112,8 +107,8 @@ export default function Home() {
     null,
   );
 
-  // Welcome flow finished. Existing-profile users are done after the welcome +
-  // commercial-use steps; users with no profile yet continue into the in-app
+  // Welcome flow finished. Existing-profile users are done after the welcome;
+  // users with no profile yet continue into the in-app
   // product tour that walks them through creating their first profile.
   const handleWelcomeComplete = useCallback(() => {
     setWelcomeOpen(false);
@@ -154,7 +149,7 @@ export default function Home() {
     return () => window.removeEventListener("scroll", pin, true);
   }, [isOnbordaVisible]);
 
-  // On the very first launch, always show the welcome + commercial-use steps
+  // On the very first launch, always show the welcome flow
   // (one-shot: the backend flag is set immediately so it can't trigger again).
   // The welcome dialog itself decides whether to continue into the browser
   // download + profile-creation flow — only when the user has no profile yet.
@@ -207,25 +202,13 @@ export default function Home() {
   const [syncLeaderProfile, setSyncLeaderProfile] =
     useState<BrowserProfile | null>(null);
 
-  // Wayfern terms and commercial trial hooks
+  // Wayfern terms remain required by the bundled browser.
   const {
     termsAccepted,
     isLoading: termsLoading,
     checkTerms,
   } = useWayfernTerms();
-  const {
-    trialStatus,
-    hasAcknowledged: trialAcknowledged,
-    checkTrialStatus,
-  } = useCommercialTrial();
-
-  // Cloud auth for cross-OS unlock
-  const { user: cloudUser } = useCloudAuth();
-  const crossOsUnlocked = getEntitlements(cloudUser).crossOsFingerprints;
-  // Bulk run/stop is a paid (browser automation) feature, matching the
-  // /v1/profiles/batch/run API gate. Free/starter users see the bulk Run/Stop
-  // actions disabled with a Pro badge.
-  const automationUnlocked = getEntitlements(cloudUser).browserAutomation;
+  const crossOsUnlocked = false;
 
   const [selfHostedSyncConfigured, setSelfHostedSyncConfigured] =
     useState(false);
@@ -236,16 +219,16 @@ export default function Home() {
       const hasConfig = Boolean(
         settings.sync_server_url && settings.sync_token,
       );
-      setSelfHostedSyncConfigured(hasConfig && !cloudUser);
+      setSelfHostedSyncConfigured(hasConfig);
     } catch {
       setSelfHostedSyncConfigured(false);
     }
-  }, [cloudUser]);
+  }, []);
 
-  const syncUnlocked = crossOsUnlocked || selfHostedSyncConfigured;
+  const syncUnlocked = selfHostedSyncConfigured;
 
   const [currentPage, setCurrentPage] = useState<AppPage>("profiles");
-  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
+  const [syncPageOpen, setSyncPageOpen] = useState(false);
   // Tracks which tab inside the shared proxy-management page should be active.
   // The VPN rail item routes to the same page but pre-selects the VPN tab.
   const [proxyManagementInitialTab, setProxyManagementInitialTab] = useState<
@@ -318,7 +301,6 @@ export default function Home() {
     useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [syncConfigDialogOpen, setSyncConfigDialogOpen] = useState(false);
-  const [deviceCodeDialogOpen, setDeviceCodeDialogOpen] = useState(false);
   const [syncAllDialogOpen, setSyncAllDialogOpen] = useState(false);
   const [profileSyncDialogOpen, setProfileSyncDialogOpen] = useState(false);
   const [currentProfileForSync, setCurrentProfileForSync] =
@@ -346,7 +328,7 @@ export default function Home() {
     setGroupManagementDialogOpen(false);
     setIntegrationsDialogOpen(false);
     setImportProfileDialogOpen(false);
-    setAccountDialogOpen(false);
+    setSyncPageOpen(false);
 
     setCurrentPage(page);
     switch (page) {
@@ -377,8 +359,8 @@ export default function Home() {
         setProxyManagementInitialTab("vpns");
         setProxyManagementDialogOpen(true);
         break;
-      case "account":
-        setAccountDialogOpen(true);
+      case "sync":
+        setSyncPageOpen(true);
         break;
       case "shortcuts":
         // Plain page render — nothing else to open.
@@ -439,8 +421,8 @@ export default function Home() {
           }
           break;
         }
-        case "goAccount":
-          handleRailNavigate("account");
+        case "goSync":
+          handleRailNavigate("sync");
           break;
         case "goSettings":
           handleRailNavigate("settings");
@@ -1393,7 +1375,6 @@ export default function Home() {
     let unlistenStarted: (() => void) | undefined;
     let unlistenProgress: (() => void) | undefined;
     let unlistenCompleted: (() => void) | undefined;
-    let unlistenWayfernBlocked: (() => void) | undefined;
 
     void (async () => {
       unlistenRequired = await listen(
@@ -1456,16 +1437,6 @@ export default function Home() {
         });
       });
 
-      unlistenWayfernBlocked = await listen("wayfern-paid-blocked", () => {
-        showToast({
-          id: "wayfern-paid-blocked",
-          type: "error",
-          title: t("wayfernBlocked.title"),
-          description: t("wayfernBlocked.description"),
-          duration: 15000,
-        });
-      });
-
       // If the effect was torn down mid-setup, the cleanup below already ran
       // before these handles existed — unlisten them now so nothing leaks.
       if (disposed) {
@@ -1473,7 +1444,6 @@ export default function Home() {
         unlistenStarted?.();
         unlistenProgress?.();
         unlistenCompleted?.();
-        unlistenWayfernBlocked?.();
       }
     })();
 
@@ -1483,7 +1453,6 @@ export default function Home() {
       unlistenStarted?.();
       unlistenProgress?.();
       unlistenCompleted?.();
-      unlistenWayfernBlocked?.();
     };
   }, [t]);
 
@@ -1515,7 +1484,7 @@ export default function Home() {
     }
   }, [isInitialized, firstRunOnboarding, checkAllPermissions]);
 
-  // Check self-hosted sync config on mount and when cloud user changes
+  // Check the self-hosted sync configuration on mount.
   useEffect(() => {
     void checkSelfHostedSync();
   }, [checkSelfHostedSync]);
@@ -1613,7 +1582,6 @@ export default function Home() {
                 onBulkCopyCookies={handleBulkCopyCookies}
                 onBulkRun={handleBulkRun}
                 onBulkStop={handleBulkStop}
-                bulkActionsUnlocked={automationUnlocked}
                 onBulkExtensionGroupAssignment={
                   handleBulkExtensionGroupAssignment
                 }
@@ -1693,7 +1661,6 @@ export default function Home() {
                 setExtensionManagementDialogOpen(false);
                 setCurrentPage("profiles");
               }}
-              limitedMode={false}
               subPage={currentPage === "extensions"}
               initialTab={extensionManagementInitialTab}
             />
@@ -1711,19 +1678,14 @@ export default function Home() {
             />
           )}
 
-          {accountDialogOpen && (
-            <AccountPage
-              isOpen={accountDialogOpen}
+          {syncPageOpen && (
+            <SyncPage
+              isOpen={syncPageOpen}
               onClose={() => {
-                setAccountDialogOpen(false);
+                setSyncPageOpen(false);
                 setCurrentPage("profiles");
               }}
-              subPage={currentPage === "account"}
-              onOpenSignIn={() => {
-                setAccountDialogOpen(false);
-                setCurrentPage("profiles");
-                setDeviceCodeDialogOpen(true);
-              }}
+              subPage={currentPage === "sync"}
             />
           )}
         </main>
@@ -1975,35 +1937,11 @@ export default function Home() {
 
       <SyncConfigDialog
         isOpen={syncConfigDialogOpen}
-        onClose={(loginOccurred) => {
+        onClose={() => {
           setSyncConfigDialogOpen(false);
           void checkSelfHostedSync();
-          if (loginOccurred) {
-            setSyncAllDialogOpen(true);
-          }
-        }}
-        onLoginStarted={() => {
-          // Hand the verify step off to its own dialog. We close this one
-          // first so the verify dialog isn't stacked on top of it (and
-          // can't end up stacked on top of the profile selector either).
-          setSyncConfigDialogOpen(false);
-          setDeviceCodeDialogOpen(true);
         }}
       />
-
-      {/* Only render while no profile-selector flow is in progress, so the
-          verify dialog never lands on top of a deep-link-triggered selector. */}
-      {pendingUrls.length === 0 && (
-        <DeviceCodeVerifyDialog
-          isOpen={deviceCodeDialogOpen}
-          onClose={(loginOccurred) => {
-            setDeviceCodeDialogOpen(false);
-            if (loginOccurred) {
-              setSyncAllDialogOpen(true);
-            }
-          }}
-        />
-      )}
 
       <SyncAllDialog
         isOpen={syncAllDialogOpen}
@@ -2028,18 +1966,6 @@ export default function Home() {
       <WayfernTermsDialog
         isOpen={!termsLoading && termsAccepted === false}
         onAccepted={checkTerms}
-      />
-
-      {/* Commercial Trial Modal - shown once when trial expires (skip for paid users) */}
-      <CommercialTrialModal
-        isOpen={
-          !termsLoading &&
-          termsAccepted === true &&
-          trialStatus?.type === "Expired" &&
-          !trialAcknowledged &&
-          !crossOsUnlocked
-        }
-        onClose={checkTrialStatus}
       />
 
       <WindowResizeWarningDialog

@@ -34,6 +34,7 @@ mod geolocation;
 mod group_manager;
 mod human_typing;
 mod ip_utils;
+mod legacy_cleanup;
 mod platform_browser;
 mod profile;
 mod profile_importer;
@@ -49,14 +50,11 @@ pub mod traffic_stats;
 mod wayfern_manager;
 mod wayfern_terms;
 // mod theme_detector; // removed: theme detection handled in webview via CSS prefers-color-scheme
-pub mod cloud_auth;
-mod commercial_license;
 mod cookie_manager;
 pub mod events;
 mod mcp_integrations;
 mod mcp_server;
 mod tag_manager;
-mod team_lock;
 mod version_updater;
 pub mod vpn;
 pub mod vpn_worker_runner;
@@ -452,27 +450,6 @@ async fn accept_wayfern_terms() -> Result<(), String> {
   wayfern_terms::WayfernTermsManager::instance()
     .accept_terms()
     .await
-}
-
-#[tauri::command]
-async fn get_commercial_trial_status(
-  app_handle: tauri::AppHandle,
-) -> Result<commercial_license::TrialStatus, String> {
-  commercial_license::CommercialLicenseManager::instance()
-    .get_trial_status(&app_handle)
-    .await
-}
-
-#[tauri::command]
-async fn acknowledge_trial_expiration(app_handle: tauri::AppHandle) -> Result<(), String> {
-  commercial_license::CommercialLicenseManager::instance()
-    .acknowledge_expiration(&app_handle)
-    .await
-}
-
-#[tauri::command]
-fn has_acknowledged_trial_expiration(app_handle: tauri::AppHandle) -> Result<bool, String> {
-  commercial_license::CommercialLicenseManager::instance().has_acknowledged(&app_handle)
 }
 
 #[tauri::command]
@@ -1078,12 +1055,6 @@ pub async fn validate_profile_network(
   }
 
   if let Some(proxy_id) = proxy_id.filter(|s| !s.is_empty()) {
-    // The cloud-included proxy is managed infrastructure; its only failure mode
-    // is the user hitting their usage limit, which surfaces as a 402 at request
-    // time. There's nothing to pre-validate here.
-    if proxy_id == crate::proxy_manager::CLOUD_PROXY_ID {
-      return Ok(());
-    }
     let settings = crate::proxy_manager::PROXY_MANAGER
       .get_proxy_settings_by_id(proxy_id)
       .ok_or_else(|| format!("Proxy '{proxy_id}' not found"))?;
@@ -1178,6 +1149,13 @@ async fn list_active_vpn_connections() -> Result<Vec<vpn::VpnStatus>, String> {
       })
       .collect(),
   )
+}
+
+#[tauri::command]
+fn get_current_display_baseline(
+  app_handle: tauri::AppHandle,
+) -> Option<crate::wayfern_manager::WayfernDisplayBaseline> {
+  crate::wayfern_manager::WayfernManager::current_display_baseline(&app_handle)
 }
 
 #[tauri::command]
@@ -1516,6 +1494,8 @@ pub fn run() {
       if let Err(e) = events::set_global_emitter(emitter) {
         log::warn!("Failed to set global event emitter: {e}");
       }
+
+      legacy_cleanup::remove_legacy_cloud_state();
 
       #[cfg(windows)]
       {
@@ -2051,16 +2031,6 @@ pub fn run() {
                     }
                   }
 
-                  // Release the cloud team lock when the browser exits naturally
-                  // (window closed by the user). The explicit kill path in
-                  // browser_runner.rs already releases it, but this branch did
-                  // not — leaking the lock, which the 30s heartbeat then renews
-                  // indefinitely. No-op for non-sync/non-paid
-                  // profiles thanks to the guards inside the helper.
-                  if !is_running {
-                    crate::team_lock::release_team_lock_if_needed(&profile).await;
-                  }
-
                   last_running_states.insert(profile_id, is_running);
                 } else {
                   // Update the state even if unchanged to ensure we have it tracked
@@ -2177,38 +2147,6 @@ pub fn run() {
         }
       });
 
-      // Start cloud auth background refresh loop
-      let app_handle_cloud = app.handle().clone();
-      tauri::async_runtime::spawn(async move {
-        // On startup, refresh sync token, proxy config, and wayfern token in
-        // PARALLEL. Previously they were awaited sequentially, so the wayfern
-        // token request didn't even start until the earlier two API calls had
-        // finished. Wayfern launch can race with this task — a few seconds of
-        // serialized API calls translates directly into a slow first launch
-        // because launch_wayfern blocks waiting for the token to land.
-        // api_call_with_retry handles 401/refresh internally — no direct
-        // refresh_access_token call needed.
-        if cloud_auth::CLOUD_AUTH.is_logged_in().await {
-          let sync_token_fut = async {
-            if let Err(e) = cloud_auth::CLOUD_AUTH.get_or_refresh_sync_token().await {
-              log::warn!("Failed to refresh cloud sync token on startup: {e}");
-            }
-          };
-          let proxy_fut = async {
-            cloud_auth::CLOUD_AUTH.sync_cloud_proxy().await;
-          };
-          let wayfern_fut = async {
-            if cloud_auth::CLOUD_AUTH.has_active_paid_subscription().await {
-              if let Err(e) = cloud_auth::CLOUD_AUTH.request_wayfern_token().await {
-                log::warn!("Failed to request wayfern token on startup: {e}");
-              }
-            }
-          };
-          tokio::join!(sync_token_fut, proxy_fut, wayfern_fut);
-        }
-        cloud_auth::CloudAuthManager::start_sync_token_refresh_loop(app_handle_cloud).await;
-      });
-
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -2284,6 +2222,7 @@ pub fn run() {
       parse_txt_proxies,
       import_proxies_from_parsed,
       update_wayfern_config,
+      get_current_display_baseline,
       generate_sample_fingerprint,
       get_profile_groups,
       get_groups_with_profile_counts,
@@ -2342,9 +2281,6 @@ pub fn run() {
       check_wayfern_terms_accepted,
       check_wayfern_downloaded,
       accept_wayfern_terms,
-      get_commercial_trial_status,
-      acknowledge_trial_expiration,
-      has_acknowledged_trial_expiration,
       start_mcp_server,
       stop_mcp_server,
       get_mcp_server_status,
@@ -2364,23 +2300,8 @@ pub fn run() {
       disconnect_vpn,
       get_vpn_status,
       list_active_vpn_connections,
-      // Cloud auth commands
-      cloud_auth::cloud_exchange_device_code,
-      cloud_auth::cloud_get_user,
-      cloud_auth::cloud_refresh_profile,
-      cloud_auth::cloud_logout,
-      cloud_auth::cloud_get_proxy_usage,
-      cloud_auth::cloud_get_countries,
-      cloud_auth::cloud_get_regions,
-      cloud_auth::cloud_get_cities,
-      cloud_auth::cloud_get_isps,
-      cloud_auth::create_cloud_location_proxy,
-      cloud_auth::restart_sync_service,
-      cloud_auth::cloud_get_wayfern_token,
-      cloud_auth::cloud_refresh_wayfern_token,
-      // Team lock commands
-      team_lock::get_team_locks,
-      team_lock::get_team_lock_status,
+      // Self-hosted sync commands
+      sync::restart_sync_service,
       // Synchronizer commands
       synchronizer::start_sync_session,
       synchronizer::stop_sync_session,
@@ -2439,10 +2360,7 @@ mod tests {
       "update_extension",
       "set_extension_sync_enabled",
       "set_extension_group_sync_enabled",
-      "get_team_lock_status",
       "generate_sample_fingerprint",
-      "cloud_get_wayfern_token",
-      "cloud_refresh_wayfern_token",
       "lock_profile",
     ];
 
@@ -2563,7 +2481,7 @@ mod tests {
             // Remove trailing comma and whitespace
             let command = line.trim_end_matches(',').trim();
             if !command.is_empty() {
-              // Strip module prefix (e.g., "cloud_auth::cloud_get_user" -> "cloud_get_user")
+              // Strip a module prefix from registered command paths.
               let command = command.rsplit("::").next().unwrap_or(command);
               commands.push(command.to_string());
             }

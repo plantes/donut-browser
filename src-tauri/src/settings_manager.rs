@@ -41,10 +41,6 @@ pub struct AppSettings {
   #[serde(default)]
   pub sync_server_url: Option<String>, // URL of the sync server
   #[serde(default)]
-  pub first_launch_timestamp: Option<u64>, // Unix epoch seconds when app was first launched
-  #[serde(default)]
-  pub commercial_trial_acknowledged: bool, // Has user dismissed the trial expiration modal
-  #[serde(default)]
   pub mcp_enabled: bool, // Enable MCP (Model Context Protocol) server
   #[serde(default)]
   pub mcp_port: Option<u16>, // Port for MCP server (default 51080)
@@ -89,8 +85,6 @@ impl Default for AppSettings {
       api_port: 10108,
       api_token: None,
       sync_server_url: None,
-      first_launch_timestamp: None,
-      commercial_trial_acknowledged: false,
       mcp_enabled: false,
       mcp_port: None,
       mcp_token: None,
@@ -938,19 +932,6 @@ pub async fn save_table_sorting_settings(sorting: TableSortingSettings) -> Resul
 
 #[tauri::command]
 pub async fn get_sync_settings(app_handle: tauri::AppHandle) -> Result<SyncSettings, String> {
-  // Cloud auth takes priority over self-hosted settings
-  if crate::cloud_auth::CLOUD_AUTH.is_logged_in().await {
-    let sync_token = crate::cloud_auth::CLOUD_AUTH
-      .get_or_refresh_sync_token()
-      .await
-      .map_err(|e| format!("Failed to get cloud sync token: {e}"))?;
-    return Ok(SyncSettings {
-      sync_server_url: Some(crate::cloud_auth::CLOUD_SYNC_URL.to_string()),
-      sync_token,
-    });
-  }
-
-  // Fall back to self-hosted settings
   let manager = SettingsManager::instance();
   let mut sync_settings = manager
     .get_sync_settings()
@@ -970,17 +951,6 @@ pub async fn save_sync_settings(
   sync_server_url: Option<String>,
   sync_token: Option<String>,
 ) -> Result<SyncSettings, String> {
-  // Cloud login and self-hosted sync share the same sync engine and a
-  // profile can't be sync'd to two backends at once. Block any *write*
-  // (non-null URL or token) while the user is signed into their cloud
-  // account — the clearing path (both `None`) is always allowed so logged-
-  // in users can wipe a stale self-hosted config that pre-dates their
-  // sign-in.
-  let is_setting_self_hosted = sync_server_url.is_some() || sync_token.is_some();
-  if is_setting_self_hosted && crate::cloud_auth::CLOUD_AUTH.is_logged_in().await {
-    return Err(serde_json::json!({ "code": "SELF_HOSTED_REQUIRES_LOGOUT" }).to_string());
-  }
-
   let manager = SettingsManager::instance();
 
   manager
@@ -1177,8 +1147,6 @@ mod tests {
       api_port: 10108,
       api_token: None,
       sync_server_url: None,
-      first_launch_timestamp: None,
-      commercial_trial_acknowledged: false,
       mcp_enabled: false,
       mcp_port: None,
       mcp_token: None,

@@ -233,12 +233,6 @@ impl ProfileImporter {
 
     let mapped = map_browser_type(browser_type);
 
-    if let Some(ref pid) = proxy_id {
-      if PROXY_MANAGER.is_cloud_or_derived(pid) || pid == crate::proxy_manager::CLOUD_PROXY_ID {
-        crate::cloud_auth::CLOUD_AUTH.sync_cloud_proxy().await;
-      }
-    }
-
     let existing_profiles = self.profile_manager.list_profiles()?;
     if existing_profiles
       .iter()
@@ -456,11 +450,8 @@ pub async fn import_browser_profile(
 ) -> Result<(), String> {
   let fingerprint_os = wayfern_config.as_ref().and_then(|c| c.os.as_deref());
 
-  if !crate::cloud_auth::CLOUD_AUTH
-    .is_fingerprint_os_allowed(fingerprint_os)
-    .await
-  {
-    return Err("Fingerprint OS spoofing requires an active Pro subscription".to_string());
+  if !crate::profile::types::is_fingerprint_os_allowed(fingerprint_os) {
+    return Err(serde_json::json!({ "code": "CROSS_OS_FINGERPRINT_UNSUPPORTED" }).to_string());
   }
 
   let importer = ProfileImporter::instance();

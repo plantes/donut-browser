@@ -627,17 +627,13 @@ async fn request_logging_middleware(request: axum::extract::Request, next: Next)
   response
 }
 
-/// Chokepoint for the future per-hour automation request limit. The limit
-/// (`requests_per_hour`, default 100) is already plumbed through entitlements;
-/// this middleware is intentionally inert today — it resolves the limit but
-/// never blocks. To enforce, count authenticated requests per rolling hour and
-/// return `StatusCode::TOO_MANY_REQUESTS` once the limit (when > 0) is exceeded.
+/// Chokepoint for a possible future per-hour automation request limit. This
+/// middleware is intentionally inert today and never blocks requests.
 async fn rate_limit_middleware(
   request: axum::extract::Request,
   next: Next,
 ) -> Result<Response, StatusCode> {
-  let _requests_per_hour = crate::cloud_auth::CLOUD_AUTH.requests_per_hour().await;
-  // TODO(rate-limit): enforce `_requests_per_hour` for automation routes.
+  // TODO(rate-limit): add request accounting here if a local limit is introduced.
   Ok(next.run(request).await)
 }
 
@@ -1522,7 +1518,7 @@ async fn update_proxy(
   ),
   responses(
     (status = 204, description = "Proxy deleted successfully"),
-    (status = 400, description = "Bad request (e.g. cloud-managed proxy)"),
+    (status = 400, description = "Bad request"),
     (status = 401, description = "Unauthorized"),
     (status = 404, description = "Proxy not found"),
     (status = 500, description = "Internal server error")
@@ -1881,9 +1877,7 @@ async fn delete_extension_group_api(
     (status = 200, description = "Profile launched successfully", body = RunProfileResponse),
     (status = 400, description = "Cannot launch cross-OS profile"),
     (status = 401, description = "Unauthorized"),
-    (status = 402, description = "Active paid plan with browser automation required"),
     (status = 404, description = "Profile not found"),
-    (status = 409, description = "Profile is locked by another team member"),
     (status = 500, description = "Internal server error")
   ),
   security(
@@ -1896,13 +1890,6 @@ async fn run_profile(
   State(state): State<ApiServerState>,
   Json(request): Json<RunProfileRequest>,
 ) -> Result<Json<RunProfileResponse>, StatusCode> {
-  if !crate::cloud_auth::CLOUD_AUTH
-    .can_use_browser_automation()
-    .await
-  {
-    return Err(StatusCode::PAYMENT_REQUIRED);
-  }
-
   let headless = request.headless.unwrap_or(false);
   let url = request.url;
 
@@ -1919,11 +1906,6 @@ async fn run_profile(
   if profile.is_cross_os() {
     return Err(StatusCode::BAD_REQUEST);
   }
-
-  // Team lock check
-  crate::team_lock::acquire_team_lock_if_needed(profile)
-    .await
-    .map_err(|_| StatusCode::CONFLICT)?;
 
   let remote_debugging_port = {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -1970,7 +1952,6 @@ async fn run_profile(
     (status = 200, description = "URL opened successfully"),
     (status = 400, description = "Cannot open URL with a cross-OS profile"),
     (status = 401, description = "Unauthorized"),
-    (status = 402, description = "Active paid plan with browser automation required"),
     (status = 404, description = "Profile not found"),
     (status = 500, description = "Internal server error")
   ),
@@ -1984,13 +1965,6 @@ async fn open_url_in_profile(
   State(state): State<ApiServerState>,
   Json(request): Json<OpenUrlRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-  if !crate::cloud_auth::CLOUD_AUTH
-    .can_use_browser_automation()
-    .await
-  {
-    return Err((StatusCode::PAYMENT_REQUIRED, String::new()));
-  }
-
   let browser_runner = crate::browser_runner::BrowserRunner::instance();
 
   browser_runner
@@ -2011,7 +1985,6 @@ async fn open_url_in_profile(
   responses(
     (status = 204, description = "Browser process killed successfully"),
     (status = 401, description = "Unauthorized"),
-    (status = 402, description = "Active paid plan required"),
     (status = 404, description = "Profile not found"),
     (status = 500, description = "Internal server error")
   ),
@@ -2024,15 +1997,6 @@ async fn kill_profile(
   Path(id): Path<String>,
   State(state): State<ApiServerState>,
 ) -> Result<StatusCode, StatusCode> {
-  // Programmatically launching and stopping profiles is a paid feature; the
-  // run/open-url handlers gate the same way.
-  if !crate::cloud_auth::CLOUD_AUTH
-    .can_use_browser_automation()
-    .await
-  {
-    return Err(StatusCode::PAYMENT_REQUIRED);
-  }
-
   let profile_manager = ProfileManager::instance();
   let profiles = profile_manager
     .list_profiles()
@@ -2049,13 +2013,10 @@ async fn kill_profile(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-  crate::team_lock::release_team_lock_if_needed(profile).await;
-
   Ok(StatusCode::NO_CONTENT)
 }
 
-// API Handler - Batch run profiles (paid: browser automation). Mirrors the
-// single `/run` gate; never breaks the batch on a single profile's failure —
+// API Handler - Batch run profiles. Never breaks the batch on a single profile's failure —
 // each profile gets its own result entry.
 #[utoipa::path(
   post,
@@ -2064,7 +2025,6 @@ async fn kill_profile(
   responses(
     (status = 200, description = "Batch launch completed; inspect per-profile results", body = BatchRunResponse),
     (status = 401, description = "Unauthorized"),
-    (status = 402, description = "Active paid plan with browser automation required"),
     (status = 500, description = "Internal server error")
   ),
   security(
@@ -2076,13 +2036,6 @@ async fn batch_run_profiles(
   State(state): State<ApiServerState>,
   Json(request): Json<BatchRunRequest>,
 ) -> Result<Json<BatchRunResponse>, StatusCode> {
-  if !crate::cloud_auth::CLOUD_AUTH
-    .can_use_browser_automation()
-    .await
-  {
-    return Err(StatusCode::PAYMENT_REQUIRED);
-  }
-
   let headless = request.headless.unwrap_or(false);
   let profile_manager = ProfileManager::instance();
   let profiles = profile_manager
@@ -2104,13 +2057,6 @@ async fn batch_run_profiles(
     };
     if profile.is_cross_os() {
       results.push(fail("cross-OS profiles cannot be launched"));
-      continue;
-    }
-    if crate::team_lock::acquire_team_lock_if_needed(profile)
-      .await
-      .is_err()
-    {
-      results.push(fail("profile is locked by another team member"));
       continue;
     }
 
@@ -2151,7 +2097,7 @@ async fn batch_run_profiles(
   Ok(Json(BatchRunResponse { results }))
 }
 
-// API Handler - Batch stop profiles (paid: browser automation).
+// API Handler - Batch stop profiles.
 #[utoipa::path(
   post,
   path = "/v1/profiles/batch/stop",
@@ -2159,7 +2105,6 @@ async fn batch_run_profiles(
   responses(
     (status = 200, description = "Batch stop completed; inspect per-profile results", body = BatchStopResponse),
     (status = 401, description = "Unauthorized"),
-    (status = 402, description = "Active paid plan with browser automation required"),
     (status = 500, description = "Internal server error")
   ),
   security(
@@ -2171,13 +2116,6 @@ async fn batch_stop_profiles(
   State(state): State<ApiServerState>,
   Json(request): Json<BatchStopRequest>,
 ) -> Result<Json<BatchStopResponse>, StatusCode> {
-  if !crate::cloud_auth::CLOUD_AUTH
-    .can_use_browser_automation()
-    .await
-  {
-    return Err(StatusCode::PAYMENT_REQUIRED);
-  }
-
   let profile_manager = ProfileManager::instance();
   let profiles = profile_manager
     .list_profiles()
@@ -2200,7 +2138,6 @@ async fn batch_stop_profiles(
       .await
     {
       Ok(_) => {
-        crate::team_lock::release_team_lock_if_needed(profile).await;
         results.push(BatchStopResult {
           profile_id: profile_id.clone(),
           ok: true,
@@ -2501,6 +2438,32 @@ mod tests {
     assert!(
       !paths.keys().any(|p| p.contains("wayfern-token")),
       "wayfern-token endpoints were removed and must stay out of the spec"
+    );
+  }
+
+  #[test]
+  fn openapi_has_no_plan_payment_responses() {
+    let spec = serde_json::to_value(ApiDoc::openapi()).expect("spec serializes");
+    for (path, method) in [
+      ("/v1/profiles/{id}/run", "post"),
+      ("/v1/profiles/{id}/open-url", "post"),
+      ("/v1/profiles/{id}/kill", "post"),
+      ("/v1/profiles/batch/run", "post"),
+      ("/v1/profiles/batch/stop", "post"),
+    ] {
+      assert!(
+        spec["paths"][path][method]["responses"]
+          .get("402")
+          .is_none(),
+        "{method} {path} must not advertise a plan-related 402"
+      );
+    }
+
+    assert!(
+      spec["paths"]["/v1/profiles"]["post"]["responses"]
+        .get("402")
+        .is_some(),
+      "profile creation must retain the upstream proxy payment response"
     );
   }
 }

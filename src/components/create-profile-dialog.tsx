@@ -53,6 +53,7 @@ import { useBrowserDownload } from "@/hooks/use-browser-download";
 import { useProxyEvents } from "@/hooks/use-proxy-events";
 import { useVpnEvents } from "@/hooks/use-vpn-events";
 import { getBrowserIcon } from "@/lib/browser-utils";
+import { captureWayfernDisplayBaseline } from "@/lib/display-baseline";
 import { cn } from "@/lib/utils";
 import type { BrowserReleaseTypes, WayfernConfig, WayfernOS } from "@/types";
 
@@ -401,7 +402,16 @@ export function CreateProfileDialog({
         }
 
         // The fingerprint will be generated at launch time by the Rust backend
-        const finalWayfernConfig = { ...wayfernConfig };
+        const displayBaseline = await captureWayfernDisplayBaseline();
+        const finalWayfernConfig = {
+          ...wayfernConfig,
+          ...(displayBaseline
+            ? {
+                display_baseline: displayBaseline,
+                initial_window_maximized: false,
+              }
+            : {}),
+        };
 
         await onCreateProfile({
           name: profileName.trim(),
@@ -886,7 +896,6 @@ export function CreateProfileDialog({
                               onConfigChange={updateWayfernConfig}
                               isCreating
                               crossOsUnlocked={crossOsUnlocked}
-                              limitedMode={!crossOsUnlocked}
                               profileVersion={
                                 getCreatableVersion("wayfern")?.version
                               }

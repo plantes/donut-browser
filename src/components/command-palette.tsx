@@ -64,7 +64,7 @@ const ICONS: Record<ShortcutId, React.ComponentType<{ className?: string }>> = {
   goExtensions: LuPuzzle,
   goGroups: LuUsers,
   goIntegrations: LuPlug,
-  goAccount: LuCloud,
+  goSync: LuCloud,
   goSettings: GoGear,
 };
 

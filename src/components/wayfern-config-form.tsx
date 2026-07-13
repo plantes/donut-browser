@@ -8,7 +8,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ProBadge } from "@/components/ui/pro-badge";
 import {
   Select,
   SelectContent,
@@ -18,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { captureWayfernDisplayBaseline } from "@/lib/display-baseline";
 import type {
   WayfernConfig,
   WayfernFingerprintConfig,
@@ -32,7 +32,6 @@ interface WayfernConfigFormProps {
   forceAdvanced?: boolean;
   readOnly?: boolean;
   crossOsUnlocked?: boolean;
-  limitedMode?: boolean;
   profileVersion?: string;
   profileBrowser?: string;
 }
@@ -40,6 +39,24 @@ interface WayfernConfigFormProps {
 const isFingerprintEditingDisabled = (config: WayfernConfig): boolean => {
   return config.randomize_fingerprint_on_launch === true;
 };
+
+const DISPLAY_FINGERPRINT_FIELDS = new Set<keyof WayfernFingerprintConfig>([
+  "screenWidth",
+  "screenHeight",
+  "screenAvailWidth",
+  "screenAvailHeight",
+  "screenAvailLeft",
+  "screenAvailTop",
+  "screenColorDepth",
+  "screenPixelDepth",
+  "devicePixelRatio",
+  "windowOuterWidth",
+  "windowOuterHeight",
+  "windowInnerWidth",
+  "windowInnerHeight",
+  "screenX",
+  "screenY",
+]);
 
 const getCurrentOS = (): WayfernOS => {
   if (typeof navigator === "undefined") return "linux";
@@ -65,7 +82,6 @@ export function WayfernConfigForm({
   forceAdvanced = false,
   readOnly = false,
   crossOsUnlocked = false,
-  limitedMode = false,
   profileVersion,
   profileBrowser,
 }: WayfernConfigFormProps) {
@@ -89,6 +105,7 @@ export function WayfernConfigForm({
         configJson,
       });
       onConfigChange("fingerprint", result);
+      onConfigChange("manual_display_fingerprint", false);
     } catch (error) {
       console.error("Failed to generate fingerprint:", error);
     } finally {
@@ -99,23 +116,19 @@ export function WayfernConfigForm({
   const selectedOS = config.os || currentOS;
 
   useEffect(() => {
-    if (isCreating && typeof window !== "undefined") {
-      const screenWidth = window.screen.width;
-      const screenHeight = window.screen.height;
-
-      if (!config.screen_max_width) {
-        onConfigChange("screen_max_width", screenWidth);
-      }
-      if (!config.screen_max_height) {
-        onConfigChange("screen_max_height", screenHeight);
-      }
+    if (isCreating && !config.display_baseline) {
+      let cancelled = false;
+      void captureWayfernDisplayBaseline().then((displayBaseline) => {
+        if (!cancelled && displayBaseline) {
+          onConfigChange("display_baseline", displayBaseline);
+          onConfigChange("initial_window_maximized", false);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     }
-  }, [
-    isCreating,
-    config.screen_max_width,
-    config.screen_max_height,
-    onConfigChange,
-  ]);
+  }, [isCreating, config.display_baseline, onConfigChange]);
 
   useEffect(() => {
     if (config.fingerprint) {
@@ -154,6 +167,9 @@ export function WayfernConfigForm({
     try {
       const jsonString = JSON.stringify(newConfig);
       onConfigChange("fingerprint", jsonString);
+      if (DISPLAY_FINGERPRINT_FIELDS.has(key)) {
+        onConfigChange("manual_display_fingerprint", true);
+      }
     } catch (error) {
       console.error("Failed to serialize fingerprint config:", error);
     }
@@ -210,7 +226,6 @@ export function WayfernConfigForm({
                 <SelectItem key={os} value={os} disabled={isDisabled}>
                   <span className="flex items-center gap-2">
                     {osLabels[os]}
-                    {isDisabled && <ProBadge />}
                   </span>
                 </SelectItem>
               );
@@ -261,32 +276,22 @@ export function WayfernConfigForm({
         </div>
       </div>
 
-      <div
-        className={
-          limitedMode ? "relative overflow-hidden rounded-lg" : undefined
-        }
-      >
-        {!limitedMode &&
-          (isEditingDisabled ? (
-            <Alert>
-              <AlertDescription>
-                {readOnly
-                  ? t("fingerprint.editingDisabledRunning")
-                  : t("fingerprint.editingDisabledRandomized")}
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <Alert>
-              <AlertDescription>
-                {t("fingerprint.basicWarning")}
-              </AlertDescription>
-            </Alert>
-          ))}
+      <div>
+        {isEditingDisabled ? (
+          <Alert>
+            <AlertDescription>
+              {readOnly
+                ? t("fingerprint.editingDisabledRunning")
+                : t("fingerprint.editingDisabledRandomized")}
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert>
+            <AlertDescription>{t("fingerprint.basicWarning")}</AlertDescription>
+          </Alert>
+        )}
 
-        <fieldset
-          disabled={isEditingDisabled || limitedMode}
-          className="space-y-6"
-        >
+        <fieldset disabled={isEditingDisabled} className="space-y-6">
           {/* User Agent and Platform */}
           <div className="space-y-3">
             <Label>{t("fingerprint.userAgentAndPlatform")}</Label>
@@ -437,7 +442,7 @@ export function WayfernConfigForm({
           </div>
 
           {/* Screen Properties */}
-          <div className="space-y-3">
+          <fieldset disabled={isEditingDisabled} className="space-y-3">
             <Label>{t("fingerprint.screenProperties")}</Label>
             <div className="grid grid-cols-1 gap-4 @md:grid-cols-2 @2xl:grid-cols-3">
               <div className="space-y-2">
@@ -556,10 +561,10 @@ export function WayfernConfigForm({
                 />
               </div>
             </div>
-          </div>
+          </fieldset>
 
           {/* Window Properties */}
-          <div className="space-y-3">
+          <fieldset disabled={isEditingDisabled} className="space-y-3">
             <Label>{t("fingerprint.windowProperties")}</Label>
             <div className="grid grid-cols-1 gap-4 @md:grid-cols-2 @2xl:grid-cols-3">
               <div className="space-y-2">
@@ -669,7 +674,7 @@ export function WayfernConfigForm({
                 />
               </div>
             </div>
-          </div>
+          </fieldset>
 
           {/* Language & Locale */}
           <div className="space-y-3">
@@ -1092,23 +1097,6 @@ export function WayfernConfigForm({
             </div>
           </div>
         </fieldset>
-        {limitedMode && (
-          <>
-            <div className="absolute inset-0 z-1 bg-background/30 backdrop-blur-[6px]" />
-            <div className="absolute inset-y-0 left-0 z-2 w-6 bg-linear-to-r from-background to-transparent" />
-            <div className="absolute inset-y-0 right-0 z-2 w-6 bg-linear-to-l from-background to-transparent" />
-            <div className="absolute inset-x-0 top-0 z-2 h-6 bg-linear-to-b from-background to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 z-2 h-6 bg-linear-to-t from-background to-transparent" />
-            <div className="absolute inset-0 z-3 flex items-center justify-center">
-              <div className="flex items-center gap-2 rounded-md bg-background/80 px-3 py-1.5">
-                <ProBadge />
-                <span className="text-sm font-medium text-muted-foreground">
-                  {t("fingerprint.proFeature")}
-                </span>
-              </div>
-            </div>
-          </>
-        )}
       </div>
     </div>
   );
@@ -1163,7 +1151,6 @@ export function WayfernConfigForm({
                       <SelectItem key={os} value={os} disabled={isDisabled}>
                         <span className="flex items-center gap-2">
                           {osLabels[os]}
-                          {isDisabled && <ProBadge />}
                         </span>
                       </SelectItem>
                     );
@@ -1217,120 +1204,50 @@ export function WayfernConfigForm({
               </div>
             </div>
 
-            {/* Screen Resolution */}
-            <div
-              className={
-                limitedMode ? "relative overflow-hidden rounded-lg" : undefined
-              }
-            >
-              <fieldset
-                disabled={isEditingDisabled || limitedMode}
-                className="space-y-3"
-              >
-                <Label>{t("fingerprint.screenResolution")}</Label>
-                <div className="grid grid-cols-1 gap-4 @md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="screen-max-width">
-                      {t("fingerprint.maxWidth")}
-                    </Label>
-                    <Input
-                      id="screen-max-width"
-                      type="number"
-                      value={config.screen_max_width ?? ""}
-                      onChange={(e) => {
-                        onConfigChange(
-                          "screen_max_width",
-                          e.target.value
-                            ? parseInt(e.target.value, 10)
-                            : undefined,
-                        );
-                      }}
-                      placeholder={t("common.placeholders.example", {
-                        value: "1920",
-                      })}
-                    />
+            <div className="space-y-3">
+              <Label>{t("fingerprint.systemManagedDisplay")}</Label>
+              <p className="text-sm text-muted-foreground">
+                {t("fingerprint.systemManagedDisplayDescription")}
+              </p>
+              {config.display_baseline && (
+                <div className="grid grid-cols-1 gap-3 rounded-md border bg-muted/30 p-3 text-sm @md:grid-cols-4">
+                  {config.display_baseline.physical_width &&
+                    config.display_baseline.physical_height && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          {t("fingerprint.screenResolution")}
+                        </p>
+                        <p>
+                          {config.display_baseline.physical_width} ×{" "}
+                          {config.display_baseline.physical_height}
+                        </p>
+                      </div>
+                    )}
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("fingerprint.currentScreen")}
+                    </p>
+                    <p>
+                      {config.display_baseline.screen_width} ×{" "}
+                      {config.display_baseline.screen_height}
+                    </p>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="screen-max-height">
-                      {t("fingerprint.maxHeight")}
-                    </Label>
-                    <Input
-                      id="screen-max-height"
-                      type="number"
-                      value={config.screen_max_height ?? ""}
-                      onChange={(e) => {
-                        onConfigChange(
-                          "screen_max_height",
-                          e.target.value
-                            ? parseInt(e.target.value, 10)
-                            : undefined,
-                        );
-                      }}
-                      placeholder={t("common.placeholders.example", {
-                        value: "1080",
-                      })}
-                    />
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("fingerprint.availableArea")}
+                    </p>
+                    <p>
+                      {config.display_baseline.screen_avail_width} ×{" "}
+                      {config.display_baseline.screen_avail_height}
+                    </p>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="screen-min-width">
-                      {t("fingerprint.minWidth")}
-                    </Label>
-                    <Input
-                      id="screen-min-width"
-                      type="number"
-                      value={config.screen_min_width ?? ""}
-                      onChange={(e) => {
-                        onConfigChange(
-                          "screen_min_width",
-                          e.target.value
-                            ? parseInt(e.target.value, 10)
-                            : undefined,
-                        );
-                      }}
-                      placeholder={t("common.placeholders.example", {
-                        value: "800",
-                      })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="screen-min-height">
-                      {t("fingerprint.minHeight")}
-                    </Label>
-                    <Input
-                      id="screen-min-height"
-                      type="number"
-                      value={config.screen_min_height ?? ""}
-                      onChange={(e) => {
-                        onConfigChange(
-                          "screen_min_height",
-                          e.target.value
-                            ? parseInt(e.target.value, 10)
-                            : undefined,
-                        );
-                      }}
-                      placeholder={t("common.placeholders.example", {
-                        value: "600",
-                      })}
-                    />
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("fingerprint.devicePixelRatio")}
+                    </p>
+                    <p>{config.display_baseline.device_pixel_ratio}</p>
                   </div>
                 </div>
-              </fieldset>
-              {limitedMode && (
-                <>
-                  <div className="absolute inset-0 z-1 bg-background/30 backdrop-blur-[6px]" />
-                  <div className="absolute inset-y-0 left-0 z-2 w-6 bg-linear-to-r from-background to-transparent" />
-                  <div className="absolute inset-y-0 right-0 z-2 w-6 bg-linear-to-l from-background to-transparent" />
-                  <div className="absolute inset-x-0 top-0 z-2 h-6 bg-linear-to-b from-background to-transparent" />
-                  <div className="absolute inset-x-0 bottom-0 z-2 h-6 bg-linear-to-t from-background to-transparent" />
-                  <div className="absolute inset-0 z-3 flex items-center justify-center">
-                    <div className="flex items-center gap-2 rounded-md bg-background/80 px-3 py-1.5">
-                      <ProBadge />
-                      <span className="text-sm font-medium text-muted-foreground">
-                        {t("fingerprint.proFeature")}
-                      </span>
-                    </div>
-                  </div>
-                </>
               )}
             </div>
           </TabsContent>

@@ -136,7 +136,6 @@ export function WayfernConfigDialog({
               forceAdvanced={true}
               readOnly={isRunning}
               crossOsUnlocked={crossOsUnlocked}
-              limitedMode={!crossOsUnlocked}
               profileVersion={profile.version}
               profileBrowser="wayfern"
             />

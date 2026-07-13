@@ -20,7 +20,6 @@ import {
   LuGroup,
   LuKey,
   LuLink,
-  LuLock,
   LuLockOpen,
   LuPlus,
   LuPuzzle,
@@ -393,7 +392,6 @@ export function ProfileInfoDialog({
     onClick: () => void;
     disabled?: boolean;
     destructive?: boolean;
-    proBadge?: boolean;
     runningBadge?: boolean;
     hidden?: boolean;
   }
@@ -434,9 +432,7 @@ export function ProfileInfoDialog({
       onClick: () => {
         handleAction(() => onConfigureWayfern?.(profile));
       },
-      // Viewing and editing fingerprints both require an active paid plan.
-      disabled: isDisabled || !crossOsUnlocked,
-      proBadge: !crossOsUnlocked,
+      disabled: isDisabled,
       runningBadge: isRunning,
       hidden: !isWayfern || !onConfigureWayfern,
     },
@@ -446,8 +442,7 @@ export function ProfileInfoDialog({
       onClick: () => {
         handleAction(() => onLaunchWithSync?.(profile));
       },
-      disabled: isDisabled || isRunning || !crossOsUnlocked,
-      proBadge: !crossOsUnlocked,
+      disabled: isDisabled || isRunning,
       hidden: profile.browser !== "wayfern" || !onLaunchWithSync,
     },
     {
@@ -585,6 +580,7 @@ export function ProfileInfoDialog({
           ProfileIcon={ProfileIcon}
           isRunning={isRunning}
           isDisabled={isDisabled}
+          crossOsUnlocked={crossOsUnlocked}
           networkLabel={networkLabel}
           groupName={groupName}
           extensionGroupName={extensionGroupName}
@@ -612,6 +608,7 @@ interface ProfileInfoLayoutProps {
   ProfileIcon: React.ComponentType<{ className?: string }>;
   isRunning: boolean;
   isDisabled: boolean;
+  crossOsUnlocked: boolean;
   networkLabel: string;
   groupName: string | null;
   extensionGroupName: string | null;
@@ -633,7 +630,6 @@ interface ProfileInfoLayoutProps {
     onClick: () => void;
     disabled?: boolean;
     destructive?: boolean;
-    proBadge?: boolean;
     runningBadge?: boolean;
   }[];
   t: (key: string, options?: Record<string, unknown>) => string;
@@ -655,6 +651,7 @@ function ProfileInfoLayout({
   ProfileIcon,
   isRunning,
   isDisabled,
+  crossOsUnlocked,
   networkLabel,
   groupName,
   extensionGroupName,
@@ -975,19 +972,6 @@ function ProfileInfoLayout({
                   <LocalDataTransferCard profileId={profile.id} t={t} />
                 </div>
               </div>
-
-              {profile.created_by_email && (
-                <div className="rounded-md border border-border bg-muted/40 px-3 py-2">
-                  <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
-                    {t("sync.team.title")}
-                  </p>
-                  <p className="mt-0.5 text-sm">
-                    {t("sync.team.createdBy", {
-                      email: profile.created_by_email,
-                    })}
-                  </p>
-                </div>
-              )}
             </div>
           )}
 
@@ -995,12 +979,7 @@ function ProfileInfoLayout({
             <FingerprintSectionInline
               profile={profile}
               isDisabled={isDisabled}
-              crossOsUnlocked={Boolean(
-                // Re-derive: parent passes crossOsUnlocked but the layout
-                // doesn't get it; we get it implicitly via fingerprintAction's
-                // proBadge state. Default to false if action missing.
-                fingerprintAction && !fingerprintAction.proBadge,
-              )}
+              crossOsUnlocked={crossOsUnlocked}
               onSaved={onClose}
               t={t}
             />
@@ -1809,20 +1788,6 @@ function FingerprintSectionInline({
     );
   }
 
-  if (!crossOsUnlocked) {
-    return (
-      <div className="flex flex-col items-center gap-3 rounded-lg border p-6 text-center">
-        <LuLock className="size-4 shrink-0 text-muted-foreground" />
-        <h3 className="text-sm font-medium text-foreground">
-          {t("profileInfo.fingerprint.lockedTitle")}
-        </h3>
-        <p className="max-w-[48ch] text-sm text-pretty text-muted-foreground">
-          {t("profileInfo.fingerprint.lockedDescription")}
-        </p>
-      </div>
-    );
-  }
-
   const onWayfernChange = (key: keyof WayfernConfig, value: unknown) => {
     setWayfernConfig((prev) => ({ ...prev, [key]: value }));
     setSuccess(null);
@@ -1866,7 +1831,6 @@ function FingerprintSectionInline({
         forceAdvanced={true}
         readOnly={isDisabled}
         crossOsUnlocked={crossOsUnlocked}
-        limitedMode={false}
         profileVersion={profile.version}
         profileBrowser={profile.browser}
       />
@@ -1973,8 +1937,7 @@ function SecuritySectionInline({
     }
     if (mode === "set" || mode === "change") {
       if (password.length < 8) return t("profilePassword.errors.tooShort");
-      if (password !== confirm)
-        return t("profilePassword.errors.passwordMismatch");
+      if (password !== confirm) return t("profilePassword.errors.mismatch");
     }
     return null;
   };

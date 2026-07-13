@@ -1,5 +1,4 @@
 use crate::browser::ProxySettings;
-use crate::cloud_auth::CLOUD_AUTH;
 use crate::downloaded_browsers_registry::DownloadedBrowsersRegistry;
 use crate::events;
 use crate::profile::{BrowserProfile, ProfileManager};
@@ -54,28 +53,16 @@ impl BrowserRunner {
     Ok(Some(path.to_string_lossy().to_string()))
   }
 
-  /// Refresh cloud proxy credentials if the profile uses a cloud or cloud-derived proxy,
-  /// then resolve the proxy settings with profile-specific sid for sticky sessions.
-  async fn resolve_proxy_with_refresh(
+  /// Resolve the configured local proxy.
+  async fn resolve_proxy(
     &self,
     proxy_id: Option<&String>,
-    profile_id: Option<&str>,
   ) -> Result<Option<ProxySettings>, String> {
     let proxy_id = match proxy_id {
       Some(id) => id,
       None => return Ok(None),
     };
 
-    if PROXY_MANAGER.is_cloud_or_derived(proxy_id) {
-      log::info!("Refreshing cloud proxy credentials before launch for proxy {proxy_id}");
-      CLOUD_AUTH.sync_cloud_proxy().await;
-    }
-    // For cloud-derived proxies, inject profile-specific sid for sticky sessions
-    if let Some(pid) = profile_id {
-      if PROXY_MANAGER.is_cloud_or_derived(proxy_id) {
-        return Ok(PROXY_MANAGER.resolve_proxy_for_profile(proxy_id, pid));
-      }
-    }
     Ok(PROXY_MANAGER.get_proxy_settings_by_id(proxy_id))
   }
 
@@ -147,9 +134,7 @@ impl BrowserRunner {
   ) -> Result<Option<ProxySettings>, String> {
     Self::fire_launch_hook(profile);
 
-    self
-      .resolve_proxy_with_refresh(profile.proxy_id.as_ref(), Some(&profile.id.to_string()))
-      .await
+    self.resolve_proxy(profile.proxy_id.as_ref()).await
   }
 
   /// Get the executable path for a browser profile
@@ -283,6 +268,16 @@ impl BrowserRunner {
 
       // Check if we need to generate a new fingerprint on every launch
       let mut updated_profile = profile.clone();
+      if crate::wayfern_manager::WayfernManager::apply_current_display_baseline(
+        &app_handle,
+        &mut wayfern_config,
+      ) {
+        log::info!(
+          "Display changed for Wayfern profile {}; refreshing its system-managed display fingerprint",
+          profile.name
+        );
+        updated_profile.wayfern_config = Some(wayfern_config.clone());
+      }
       if wayfern_config.randomize_fingerprint_on_launch == Some(true) {
         log::info!(
           "Generating random fingerprint for Wayfern profile: {}",
@@ -307,12 +302,14 @@ impl BrowserRunner {
 
         // Update the config with the new fingerprint for launching
         wayfern_config.fingerprint = Some(new_fingerprint.clone());
+        wayfern_config.manual_display_fingerprint = Some(false);
 
         // Save the updated fingerprint to the profile so it persists.
         let mut updated_wayfern_config = updated_profile.wayfern_config.clone().unwrap_or_default();
         updated_wayfern_config.fingerprint = Some(new_fingerprint);
         // Preserve the randomize flag so it persists across launches
         updated_wayfern_config.randomize_fingerprint_on_launch = Some(true);
+        updated_wayfern_config.manual_display_fingerprint = Some(false);
         // Preserve the OS setting so it's used for future fingerprint generation
         if wayfern_config.os.is_some() {
           updated_wayfern_config.os = wayfern_config.os.clone();
@@ -466,18 +463,27 @@ impl BrowserRunner {
       // stored fingerprint targets an older browser version). Persist it so the
       // next launch starts from the upgraded value — saved below via
       // save_process_info(&updated_profile).
+      let mut persisted_wayfern_config = updated_profile.wayfern_config.clone().unwrap_or_default();
       if let Some(used_fp) = wayfern_result.used_fingerprint.clone() {
-        let mut cfg = updated_profile.wayfern_config.clone().unwrap_or_default();
-        if cfg.fingerprint.as_deref() != Some(used_fp.as_str()) {
+        if persisted_wayfern_config.fingerprint.as_deref() != Some(used_fp.as_str()) {
           log::info!(
             "Persisting upgraded fingerprint from Wayfern.setFingerprint for profile: {} (len {})",
             profile.name,
             used_fp.len()
           );
-          cfg.fingerprint = Some(used_fp);
-          updated_profile.wayfern_config = Some(cfg);
+          persisted_wayfern_config.fingerprint = Some(used_fp);
         }
       }
+
+      if !headless
+        && !profile.ephemeral
+        && wayfern_result.initial_window_maximized
+        && persisted_wayfern_config.valid_display_baseline().is_some()
+        && persisted_wayfern_config.initial_window_maximized != Some(true)
+      {
+        persisted_wayfern_config.initial_window_maximized = Some(true);
+      }
+      updated_profile.wayfern_config = Some(persisted_wayfern_config);
 
       // Update profile with the process info
       updated_profile.process_id = Some(process_id);
@@ -1200,9 +1206,6 @@ pub async fn launch_browser_profile_impl(
     ));
   }
 
-  // Team lock check: if profile is sync-enabled and user is on a team, acquire lock
-  crate::team_lock::acquire_team_lock_if_needed(&profile).await?;
-
   // Notify sync scheduler that profile is now running and queue sync for when it stops
   if let Some(scheduler) = crate::sync::get_global_scheduler() {
     let pid = profile.id.to_string();
@@ -1337,9 +1340,6 @@ pub async fn kill_browser_profile(
         profile.name,
         profile.id
       );
-
-      // Release team lock if applicable
-      crate::team_lock::release_team_lock_if_needed(&profile).await;
 
       // Notify sync scheduler that profile stopped (sync was queued at launch)
       if let Some(scheduler) = crate::sync::get_global_scheduler() {

@@ -111,7 +111,7 @@ export function SyncAllDialog({ isOpen, onClose }: SyncAllDialogProps) {
   const totalCount = items.reduce((sum, item) => sum + item.count, 0);
 
   // Don't render anything when there's nothing to sync — the parent
-  // mounts this dialog eagerly after login, so silent-close is correct.
+  // mounts this dialog eagerly, so silent-close is correct.
   if (!isLoading && totalCount === 0) {
     return null;
   }

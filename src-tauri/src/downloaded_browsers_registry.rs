@@ -48,7 +48,17 @@ impl DownloadedBrowsersRegistry {
     }
 
     let content = fs::read_to_string(&registry_path)?;
-    let registry_data: RegistryData = serde_json::from_str(&content)?;
+    let mut registry_data: RegistryData = serde_json::from_str(&content)?;
+
+    // Registry entries historically stored absolute installation paths. In
+    // portable mode those paths become stale as soon as the folder is moved.
+    // The canonical location is deterministic, so rebuild it on every load.
+    let binaries_dir = crate::app_dirs::binaries_dir();
+    for (browser, versions) in &mut registry_data.browsers {
+      for (version, info) in versions {
+        info.file_path = binaries_dir.join(browser).join(version);
+      }
+    }
 
     let mut data = self.data.lock().unwrap();
     *data = registry_data;
@@ -1289,6 +1299,17 @@ pub async fn ensure_active_browsers_downloaded(
         Ok(info) => info.version,
         Err(e) => {
           log::warn!("Failed to resolve current {browser} version: {e}");
+          let progress = crate::downloader::DownloadProgress {
+            browser: (*browser).to_string(),
+            version: String::new(),
+            downloaded_bytes: 0,
+            total_bytes: None,
+            percentage: 0.0,
+            speed_bytes_per_sec: 0.0,
+            eta_seconds: None,
+            stage: "error".to_string(),
+          };
+          let _ = crate::events::emit("download-progress", &progress);
           continue;
         }
       }

@@ -165,7 +165,6 @@
       "passwordSaved": "Mot de passe de chiffrement défini",
       "passwordMismatch": "Les mots de passe ne correspondent pas",
       "passwordTooShort": "Le mot de passe doit contenir au moins 8 caractères",
-      "requiresProOrOwner": "Le chiffrement des profils est disponible pour les utilisateurs Pro et les propriétaires d'équipe.",
       "validatePassword": "Valider",
       "validateDialog": {
         "title": "Valider le mot de passe de chiffrement",
@@ -174,15 +173,6 @@
         "matchToast": "Le mot de passe est correct",
         "mismatchToast": "Le mot de passe ne correspond pas"
       }
-    },
-    "commercial": {
-      "title": "Licence commerciale",
-      "trialActive": "Essai: {{days}} jours, {{hours}} heures restantes",
-      "trialActiveDescription": "L'utilisation commerciale est gratuite pendant l'essai. À l'expiration, toutes les fonctionnalités continuent de fonctionner — l'utilisation personnelle reste gratuite, seule l'utilisation commerciale nécessitera une licence.",
-      "trialExpired": "Essai expiré",
-      "trialExpiredDescription": "L'utilisation personnelle reste gratuite. L'utilisation commerciale nécessite une licence.",
-      "subscriptionActive": "Abonné — formule {{plan}}",
-      "subscriptionActiveDescription": "Votre abonnement Donut Browser est actif. L'usage commercial est licencié pendant toute la durée de votre formule."
     },
     "advanced": {
       "title": "Avancé",
@@ -208,7 +198,7 @@
       "settings": "Paramètres",
       "proxies": "Proxys et VPNs",
       "groups": "Groupes",
-      "syncService": "Compte",
+      "syncService": "Synchronisation",
       "integrations": "Intégrations",
       "importProfile": "Importer un profil",
       "extensions": "Extensions"
@@ -270,7 +260,6 @@
       "stopLeader": "Arrêter ce profil et tous ses suiveurs",
       "stopFollower": "Suit les actions de {{leaderName}}",
       "desyncedTooltip": "La synchronisation a échoué à {{url}}",
-      "paidFeature": "Le synchroniseur est une fonctionnalité payante",
       "wayfernOnly": "Seuls les profils Wayfern peuvent être synchronisés",
       "selectFollowers": "Sélectionner les profils suiveurs",
       "selectFollowersDesc": "Choisissez les profils qui reproduiront les actions du profil leader. Seuls les profils Wayfern arrêtés peuvent être sélectionnés.",
@@ -307,8 +296,7 @@
       "assignExtensionGroup": "Assigner un groupe d’extensions",
       "copyCookies": "Copier les cookies",
       "runSelected": "Lancer la sélection",
-      "stopSelected": "Arrêter la sélection",
-      "proRequired": "Plan Pro requis pour le lancement/arrêt groupé"
+      "stopSelected": "Arrêter la sélection"
     },
     "passwordProtectedBadge": "Protégé par mot de passe",
     "launchHook": {
@@ -602,7 +590,7 @@
       "notConfigured": "Service de synchronisation non configuré.",
       "configureService": "Configurer le service de synchronisation"
     },
-    "title": "Service de synchronisation",
+    "title": "Synchronisation",
     "config": {
       "serverUrlRequired": "Veuillez saisir une URL de serveur",
       "connectionSuccess": "Connexion réussie !",
@@ -611,7 +599,9 @@
       "settingsSaved": "Paramètres de synchronisation enregistrés",
       "saveFailed": "Échec de l’enregistrement des paramètres",
       "disconnected": "Synchronisation déconnectée",
-      "disconnectFailed": "Échec de la déconnexion"
+      "disconnectFailed": "Échec de la déconnexion",
+      "testConnection": "Tester la connexion",
+      "disconnect": "Déconnecter"
     },
     "serverUrl": "URL du serveur",
     "serverUrlPlaceholder": "https://sync.exemple.com",
@@ -624,40 +614,6 @@
       "error": "Erreur de synchronisation"
     },
     "description": "Connectez-vous à un serveur de synchronisation pour synchroniser vos profils, proxies et groupes entre appareils.",
-    "cloud": {
-      "tabLabel": "Cloud",
-      "selfHostedTabLabel": "Auto-hébergé",
-      "email": "E-mail",
-      "deviceLinkInstructions": "Cliquez sur « Se connecter » pour ouvrir la page de connexion dans votre navigateur. Une fois connecté, copiez le code affiché et collez-le ci-dessous.",
-      "openLogin": "Se connecter",
-      "linkCodeLabel": "Code de connexion",
-      "linkCodePlaceholder": "Collez le code du site web",
-      "signInTitle": "Se Connecter",
-      "verifyAndLogin": "Vérifier et Se Connecter",
-      "loggingIn": "Connexion en cours...",
-      "connected": "Connecté",
-      "plan": "Forfait",
-      "profiles": "Profils",
-      "profileUsage": "{{used}} / {{limit}}",
-      "manageAccount": "Gérer le Compte",
-      "logout": "Se Déconnecter",
-      "logoutConfirm": "Êtes-vous sûr de vouloir vous déconnecter ? La synchronisation cloud sera arrêtée.",
-      "loginSuccess": "Connexion réussie !",
-      "logoutSuccess": "Déconnexion réussie."
-    },
-    "team": {
-      "title": "Équipe",
-      "name": "Nom de l'équipe",
-      "role": "Rôle",
-      "roleOwner": "Propriétaire",
-      "roleAdmin": "Administrateur",
-      "roleMember": "Membre",
-      "manageOnWeb": "Gérer l'équipe sur le tableau de bord web",
-      "profileLocked": "Utilisé par {{email}}",
-      "profileLockedShort": "En cours d'utilisation",
-      "cannotLaunchLocked": "Impossible de lancer — le profil est utilisé par {{email}}",
-      "createdBy": "Créé par {{email}}"
-    },
     "disabled": "Désactivée",
     "toast": {
       "profileSynced": "Profil '{{name}}' synchronisé avec succès",
@@ -846,8 +802,7 @@
       "selectFile": "Choisir un Fichier",
       "preview": "{{count}} cookies trouvés",
       "success": "{{imported}} cookies importés avec succès ({{replaced}} remplacés)",
-      "error": "Échec de l'importation des cookies",
-      "proFeature": "L'importation de cookies est une fonctionnalité Pro"
+      "error": "Échec de l'importation des cookies"
     },
     "export": {
       "title": "Exporter les Cookies",
@@ -1000,6 +955,11 @@
     "colorDepth": "Profondeur de couleur",
     "pixelDepth": "Profondeur de pixel",
     "devicePixelRatio": "Ratio de pixels de l'appareil",
+    "systemManagedDisplay": "Écran géré par le système",
+    "systemManagedDisplayDescription": "Le premier lancement est maximisé dans la zone de travail de l'écran actuel. Les lancements suivants restaurent l'état de fenêtre choisi.",
+    "currentScreen": "Écran actuel",
+    "availableArea": "Zone de travail disponible",
+    "systemManagedFieldsReadOnly": "Les valeurs d'écran, de fenêtre, de position et de densité de pixels sont gérées depuis la fenêtre réelle du navigateur et synchronisées au lancement.",
     "windowProperties": "Propriétés de la fenêtre",
     "outerWidth": "Largeur extérieure",
     "outerHeight": "Hauteur extérieure",
@@ -1053,7 +1013,6 @@
     "productSub": "Produit Sub",
     "brand": "Marque",
     "brandVersion": "Version de la marque",
-    "proFeature": "Ceci est une fonctionnalité Pro",
     "generateFingerprint": "Générer l'empreinte",
     "refreshFingerprint": "Actualiser l'empreinte",
     "canvasNoiseSeedPlaceholder": "Entrez une graine pour l'empreinte canvas",
@@ -1193,9 +1152,7 @@
       "cannotWhileRunning": "Arrêtez le profil avant de modifier son mot de passe."
     },
     "fingerprint": {
-      "notSupported": "L'édition des empreintes n'est disponible que pour les profils Wayfern.",
-      "lockedTitle": "Afficher et modifier l'empreinte est une fonctionnalité Pro",
-      "lockedDescription": "Les informations de votre appareil sont protégées dans chaque profil. Afficher et modifier l'empreinte d'un profil nécessite un forfait payant actif."
+      "notSupported": "L'édition des empreintes n'est disponible que pour les profils Wayfern."
     },
     "syncStatusValue": {
       "waiting": "En attente",
@@ -1212,7 +1169,6 @@
     "extensionsTab": "Extensions",
     "groupsTab": "Groupes",
     "managedNotice": "Les extensions gérées ici remplaceront toutes les extensions installées manuellement dans les profils lors du lancement.",
-    "proRequired": "La gestion des extensions est une fonctionnalité Pro",
     "empty": "Aucune extension téléchargée pour l'instant.",
     "noGroups": "Aucun groupe d'extensions créé pour l'instant.",
     "createGroup": "Créer un Groupe",
@@ -1270,14 +1226,6 @@
       "groupsDescription": "Supprimer {{count}} groupes d'extensions ? {{names}}",
       "confirmButton": "Supprimer"
     }
-  },
-  "pro": {
-    "badge": "PRO",
-    "fingerprintLocked": "La modification d'empreinte est une fonctionnalité Pro",
-    "cookieCopyLocked": "La copie de cookies est une fonctionnalité Pro",
-    "cookieImportLocked": "L'importation de cookies est une fonctionnalité Pro",
-    "cookieExportLocked": "L'exportation de cookies est une fonctionnalité Pro",
-    "cookieManagementLocked": "La gestion des cookies est une fonctionnalité Pro"
   },
   "dnsBlocklist": {
     "title": "Liste de blocage DNS",
@@ -1545,14 +1493,6 @@
     "acceptFailed": "Échec de l'acceptation des conditions",
     "tryAgain": "Veuillez réessayer"
   },
-  "commercialTrial": {
-    "title": "Période d'essai commerciale expirée",
-    "description": "Votre période d'essai commercial de 2 semaines est terminée.",
-    "body": "Si vous utilisez Donut Browser à des fins professionnelles, vous devez acheter une licence commerciale pour continuer. Vous pouvez toujours l'utiliser gratuitement à des fins personnelles.",
-    "understandButton": "J'ai compris",
-    "failed": "Échec de l'enregistrement de la confirmation",
-    "tryAgain": "Veuillez réessayer"
-  },
   "permissionDialog": {
     "titleMicrophone": "Accès au microphone requis",
     "titleCamera": "Accès à la caméra requis",
@@ -1786,15 +1726,12 @@
     "vpnNotFound": "VPN introuvable",
     "extensionNotFound": "Extension introuvable",
     "extensionGroupNotFound": "Groupe d'extensions introuvable",
-    "cannotModifyCloudManagedProxy": "Impossible de modifier la synchronisation d'un proxy géré dans le cloud",
     "syncLockedByProfile": "La synchronisation ne peut pas être désactivée tant qu'elle est utilisée par des profils synchronisés",
-    "syncNotConfigured": "La synchronisation n'est pas configurée. Connectez-vous ou configurez un serveur auto-hébergé.",
+    "syncNotConfigured": "La synchronisation n?est pas configur?e. Configurez d?abord un serveur auto-h?berg?.",
     "internal": "Une erreur s'est produite : {{detail}}",
     "invalidLaunchHookUrl": "URL du hook de lancement invalide. Utilisez une URL http:// ou https:// complète.",
     "cookieDbLocked": "Impossible de lire les cookies — la base de données est verrouillée. Fermez le navigateur et réessayez.",
     "cookieDbUnavailable": "Impossible de lire les cookies — le magasin de cookies est indisponible.",
-    "selfHostedRequiresLogout": "Déconnectez-vous de votre compte Donut avant de configurer un serveur auto-hébergé.",
-    "fingerprintRequiresPro": "Afficher ou modifier l'empreinte nécessite un forfait payant actif. La protection est incluse dans tous les forfaits.",
     "proxyNotWorking": "Le proxy sélectionné ne fonctionne pas, le profil n'a donc pas été créé.",
     "proxyPaymentRequired": "Le proxy sélectionné requiert un paiement (402) — son abonnement a peut-être expiré — le profil n'a donc pas été créé.",
     "vpnNotWorking": "Le VPN sélectionné ne fonctionne pas, le profil n'a donc pas été créé.",
@@ -1802,7 +1739,8 @@
     "updateChecksumsUnavailable": "La mise à jour {{version}} n'a pas pu être vérifiée car son fichier de sommes de contrôle n'a pas pu être récupéré. La mise à jour n'a pas été installée ; une nouvelle tentative aura lieu plus tard.",
     "updateChecksumMismatch": "Le fichier de mise à jour téléchargé {{file}} a échoué à la vérification de la somme de contrôle et a été supprimé. Veuillez réessayer.",
     "nameCannotBeEmpty": "Le nom ne peut pas être vide",
-    "wayfernVersionNotAvailable": "La version {{requested}} de Wayfern n'est pas disponible au téléchargement. La version actuelle est {{current}}."
+    "wayfernVersionNotAvailable": "La version {{requested}} de Wayfern n'est pas disponible au téléchargement. La version actuelle est {{current}}.",
+    "crossOsFingerprintUnsupported": "Cette version de Wayfern ne prend pas en charge les empreintes intersystèmes."
   },
   "rail": {
     "profiles": "Profils",
@@ -1819,7 +1757,7 @@
     },
     "network": "Réseau",
     "integrations": "Intégrations",
-    "account": "Compte"
+    "sync": "Synchronisation"
   },
   "pageTitle": {
     "proxies": "Réseau",
@@ -1828,9 +1766,9 @@
     "vpns": "Réseau",
     "settings": "Paramètres",
     "integrations": "Intégrations",
-    "account": "Compte",
     "import": "Importer un profil",
-    "shortcuts": "Raccourcis clavier"
+    "shortcuts": "Raccourcis clavier",
+    "sync": "Synchronisation"
   },
   "encryption": {
     "required": {
@@ -1854,39 +1792,6 @@
         "extension_groups": "groupes d'extensions"
       }
     }
-  },
-  "account": {
-    "refreshed": "Compte actualisé",
-    "loggedOut": "Déconnecté",
-    "signedOut": "Déconnecté",
-    "signedOutDescription": "Connectez-vous pour activer la synchronisation cloud, les profils chiffrés et les fonctionnalités d’équipe.",
-    "plan": "Plan : {{plan}} · {{period}}",
-    "refresh": "Actualiser",
-    "logout": "Se déconnecter",
-    "signIn": "Se connecter",
-    "fields": {
-      "plan": "Plan",
-      "status": "Statut",
-      "teamRole": "Rôle d’équipe",
-      "period": "Période",
-      "device": "Appareil"
-    },
-    "tabs": {
-      "account": "Compte",
-      "selfHosted": "Auto-hébergé"
-    },
-    "selfHosted": {
-      "title": "Serveur de synchronisation auto-hébergé",
-      "description": "Connectez Donut à votre propre serveur donut-sync pour synchroniser profils, proxys, groupes et extensions sans utiliser le cloud hébergé.",
-      "disabledWhileLoggedIn": "La synchronisation auto-hébergée n'est pas disponible lorsque vous êtes connecté à votre compte Donut. Déconnectez-vous pour utiliser un serveur personnalisé.",
-      "connectionStatus": "Connexion :",
-      "statusUnknown": "Non testé",
-      "testConnection": "Tester la connexion",
-      "disconnect": "Déconnecter"
-    },
-    "deviceOrdinal": "{{ordinal}} sur {{count}}",
-    "automationPrimaryOnly": "L'automatisation du navigateur ne fonctionne que sur votre appareil principal (Appareil 1). Déconnectez-vous là-bas pour l'utiliser ici.",
-    "automationActiveHere": "L'automatisation du navigateur est active sur cet appareil."
   },
   "shortcutsPage": {
     "title": "Raccourcis clavier",
@@ -1916,8 +1821,8 @@
     "goExtensions": "Aller à Extensions",
     "goGroups": "Aller à Groupes",
     "goIntegrations": "Aller à Intégrations",
-    "goAccount": "Aller à Compte",
-    "goSettings": "Aller à Paramètres"
+    "goSettings": "Aller à Paramètres",
+    "goSync": "Aller ? Synchronisation"
   },
   "closeConfirm": {
     "title": "Fermer Donut Browser ?",
@@ -1994,21 +1899,7 @@
         "groups": "Groupes de profils",
         "cookies": "Import et export de cookies"
       }
-    },
-    "license": {
-      "title": "Licence",
-      "body": "Donut Browser est open source et gratuit.",
-      "agree": "J'ai compris",
-      "personalTitle": "Usage personnel",
-      "personalDesc": "Gratuit à vie.",
-      "commercialTitle": "Usage commercial",
-      "trialBadge": "2 semaines gratuites",
-      "commercialDesc": "Gratuit pendant une évaluation de 2 semaines. Ensuite, un forfait payant permet de maintenir et de faire prospérer le projet."
     }
-  },
-  "wayfernBlocked": {
-    "title": "Automatisation du navigateur en pause",
-    "description": "Votre compte a été temporairement privé des fonctionnalités Pro du navigateur, généralement à cause d'une connexion sur plusieurs appareils à la fois. Déconnectez-vous des autres appareils, puis relancez le profil pour la rétablir."
   },
   "wayfernConfigDialog": {
     "titleView": "Voir les paramètres d'empreinte - {{name}} ({{browser}})",

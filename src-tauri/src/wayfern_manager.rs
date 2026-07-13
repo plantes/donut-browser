@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -30,6 +30,12 @@ pub struct WayfernConfig {
   #[serde(default)]
   pub screen_min_height: Option<u32>,
   #[serde(default)]
+  pub display_baseline: Option<WayfernDisplayBaseline>,
+  #[serde(default)]
+  pub initial_window_maximized: Option<bool>,
+  #[serde(default)]
+  pub manual_display_fingerprint: Option<bool>,
+  #[serde(default)]
   pub geoip: Option<serde_json::Value>, // For compatibility with shared config form
   #[serde(default)]
   pub block_images: Option<bool>, // For compatibility with shared config form
@@ -45,6 +51,87 @@ pub struct WayfernConfig {
   /// location can be refreshed instead of showing stale data.
   #[serde(default)]
   pub geo_proxy_signature: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WayfernDisplayBaseline {
+  #[serde(default)]
+  pub physical_width: Option<u32>,
+  #[serde(default)]
+  pub physical_height: Option<u32>,
+  pub screen_width: u32,
+  pub screen_height: u32,
+  pub screen_avail_width: u32,
+  pub screen_avail_height: u32,
+  pub screen_avail_left: i32,
+  pub screen_avail_top: i32,
+  pub device_pixel_ratio: f64,
+  pub screen_color_depth: u32,
+  pub screen_pixel_depth: u32,
+}
+
+impl WayfernConfig {
+  pub fn valid_display_baseline(&self) -> Option<&WayfernDisplayBaseline> {
+    self.display_baseline.as_ref().filter(|baseline| {
+      baseline.screen_width > 0
+        && baseline.screen_height > 0
+        && baseline.screen_avail_width > 0
+        && baseline.screen_avail_height > 0
+        && baseline.device_pixel_ratio.is_finite()
+        && baseline.device_pixel_ratio > 0.0
+    })
+  }
+
+  fn should_sync_display_fingerprint(&self) -> bool {
+    self.manual_display_fingerprint != Some(true)
+  }
+}
+
+impl WayfernDisplayBaseline {
+  fn from_monitor(monitor: &tauri::window::Monitor) -> Option<Self> {
+    let scale_factor = monitor.scale_factor();
+    if !scale_factor.is_finite() || scale_factor <= 0.0 {
+      return None;
+    }
+
+    let size = monitor.size();
+    let work_area = monitor.work_area();
+    let logical_u32 = |value: u32| ((value as f64) / scale_factor).round().max(1.0) as u32;
+    let logical_i32 = |value: i32| ((value as f64) / scale_factor).round() as i32;
+
+    Some(Self {
+      physical_width: Some(size.width),
+      physical_height: Some(size.height),
+      screen_width: logical_u32(size.width),
+      screen_height: logical_u32(size.height),
+      screen_avail_width: logical_u32(work_area.size.width),
+      screen_avail_height: logical_u32(work_area.size.height),
+      screen_avail_left: logical_i32(work_area.position.x),
+      screen_avail_top: logical_i32(work_area.position.y),
+      device_pixel_ratio: scale_factor,
+      screen_color_depth: 24,
+      screen_pixel_depth: 24,
+    })
+  }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ActualWindowMetrics {
+  screen_width: u32,
+  screen_height: u32,
+  screen_avail_width: u32,
+  screen_avail_height: u32,
+  screen_avail_left: i32,
+  screen_avail_top: i32,
+  screen_color_depth: u32,
+  screen_pixel_depth: u32,
+  device_pixel_ratio: f64,
+  window_outer_width: u32,
+  window_outer_height: u32,
+  window_inner_width: u32,
+  window_inner_height: u32,
+  screen_x: i32,
+  screen_y: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +150,8 @@ pub struct WayfernLaunchResult {
   /// only — the caller persists it to the profile; never sent to the frontend.
   #[serde(default, skip_serializing)]
   pub used_fingerprint: Option<String>,
+  #[serde(default, skip_serializing)]
+  pub initial_window_maximized: bool,
 }
 
 struct WayfernInstance {
@@ -111,6 +200,51 @@ impl WayfernManager {
     &WAYFERN_MANAGER
   }
 
+  pub fn current_display_baseline(app_handle: &AppHandle) -> Option<WayfernDisplayBaseline> {
+    let window = app_handle.get_webview_window("main")?;
+    let monitor = window.current_monitor().ok()??;
+    WayfernDisplayBaseline::from_monitor(&monitor)
+  }
+
+  pub fn apply_current_display_baseline(
+    app_handle: &AppHandle,
+    config: &mut WayfernConfig,
+  ) -> bool {
+    let Some(baseline) = Self::current_display_baseline(app_handle) else {
+      return false;
+    };
+
+    let changed = config.display_baseline.as_ref() != Some(&baseline);
+    config.display_baseline = Some(baseline.clone());
+    if changed {
+      config.initial_window_maximized = Some(false);
+    }
+
+    if config.should_sync_display_fingerprint() {
+      let Some(stored_fingerprint) = config.fingerprint.as_deref() else {
+        return changed;
+      };
+      if let Ok(stored_value) = serde_json::from_str::<serde_json::Value>(stored_fingerprint) {
+        let wrapped = stored_value.get("fingerprint").is_some();
+        let mut fingerprint = stored_value
+          .get("fingerprint")
+          .cloned()
+          .unwrap_or(stored_value);
+        Self::apply_display_baseline(&mut fingerprint, &baseline);
+        let value = if wrapped {
+          json!({ "fingerprint": fingerprint })
+        } else {
+          fingerprint
+        };
+        if let Ok(serialized) = serde_json::to_string(&value) {
+          config.fingerprint = Some(serialized);
+        }
+      }
+    }
+
+    changed
+  }
+
   #[allow(dead_code)]
   pub fn get_profiles_dir(&self) -> PathBuf {
     crate::app_dirs::profiles_dir()
@@ -148,44 +282,164 @@ impl WayfernManager {
     fingerprint
   }
 
-  /// Derive the on-screen window size Chromium should open at, from the stored
-  /// fingerprint. `Wayfern.setFingerprint` only spoofs what the page *reports*
-  /// for `windowOuterWidth`/`screenWidth`/etc.; it does not move or resize the
-  /// real top-level window. Without `--window-size` the OS window keeps
-  /// Chromium's default, so the visible window contradicts the reported
-  /// dimensions — a detectable mismatch. We pass `--window-size` so the actual
-  /// window matches the fingerprint.
-  ///
-  /// Keys are the camelCase fields Wayfern uses in its fingerprint
-  /// (`windowOuterWidth`, `screenAvailWidth`, …) — NOT the dotted
-  /// Preference order, matching how the fingerprint
-  /// describes the window:
-  /// 1. `windowOuterWidth` / `windowOuterHeight` — the real window size.
-  /// 2. `screenAvailWidth` / `screenAvailHeight` — usable screen area.
-  /// 3. `screenWidth` / `screenHeight` — full screen.
-  ///
-  /// Returns `None` when the fingerprint carries no usable dimensions, leaving
-  /// Chromium's default untouched. The fingerprint JSON may be the bare object
-  /// or the legacy `{ "fingerprint": {...} }` wrapper.
-  fn window_size_from_fingerprint(fingerprint_json: &str) -> Option<(u32, u32)> {
-    let parsed: serde_json::Value = serde_json::from_str(fingerprint_json).ok()?;
-    let fp = parsed.get("fingerprint").unwrap_or(&parsed);
-    let obj = fp.as_object()?;
+  fn number_as_u32(value: Option<&serde_json::Value>) -> Option<u32> {
+    value
+      .and_then(|value| value.as_u64().or_else(|| value.as_f64().map(|n| n as u64)))
+      .filter(|value| *value > 0 && *value <= u32::MAX as u64)
+      .map(|value| value as u32)
+  }
 
-    // Accept both numeric and stringified numbers (Wayfern emits numbers, but a
-    // CDP echo or older saved fingerprint may stringify them).
-    let read = |key: &str| -> Option<u32> {
-      let v = obj.get(key)?;
-      v.as_u64()
-        .or_else(|| v.as_str().and_then(|s| s.trim().parse::<u64>().ok()))
-        .filter(|n| *n > 0)
-        .map(|n| n as u32)
+  fn number_as_i32(value: Option<&serde_json::Value>) -> Option<i32> {
+    value
+      .and_then(|value| value.as_i64().or_else(|| value.as_f64().map(|n| n as i64)))
+      .filter(|value| *value >= i32::MIN as i64 && *value <= i32::MAX as i64)
+      .map(|value| value as i32)
+  }
+
+  fn apply_display_baseline(
+    fingerprint: &mut serde_json::Value,
+    baseline: &WayfernDisplayBaseline,
+  ) {
+    let Some(obj) = fingerprint.as_object_mut() else {
+      return;
     };
-    let pair = |w: &str, h: &str| -> Option<(u32, u32)> { Some((read(w)?, read(h)?)) };
 
-    pair("windowOuterWidth", "windowOuterHeight")
-      .or_else(|| pair("screenAvailWidth", "screenAvailHeight"))
-      .or_else(|| pair("screenWidth", "screenHeight"))
+    let old_outer_width = Self::number_as_u32(obj.get("windowOuterWidth"));
+    let old_outer_height = Self::number_as_u32(obj.get("windowOuterHeight"));
+    let old_inner_width = Self::number_as_u32(obj.get("windowInnerWidth"));
+    let old_inner_height = Self::number_as_u32(obj.get("windowInnerHeight"));
+    let chrome_width = old_outer_width
+      .zip(old_inner_width)
+      .map(|(outer, inner)| outer.saturating_sub(inner))
+      .unwrap_or(0);
+    let chrome_height = old_outer_height
+      .zip(old_inner_height)
+      .map(|(outer, inner)| outer.saturating_sub(inner))
+      .unwrap_or(0);
+    let inner_width = baseline
+      .screen_avail_width
+      .saturating_sub(chrome_width)
+      .max(1);
+    let inner_height = baseline
+      .screen_avail_height
+      .saturating_sub(chrome_height)
+      .max(1);
+
+    obj.insert("screenWidth".to_string(), json!(baseline.screen_width));
+    obj.insert("screenHeight".to_string(), json!(baseline.screen_height));
+    obj.insert(
+      "screenAvailWidth".to_string(),
+      json!(baseline.screen_avail_width),
+    );
+    obj.insert(
+      "screenAvailHeight".to_string(),
+      json!(baseline.screen_avail_height),
+    );
+    obj.insert(
+      "screenAvailLeft".to_string(),
+      json!(baseline.screen_avail_left),
+    );
+    obj.insert(
+      "screenAvailTop".to_string(),
+      json!(baseline.screen_avail_top),
+    );
+    obj.insert(
+      "screenColorDepth".to_string(),
+      json!(baseline.screen_color_depth),
+    );
+    obj.insert(
+      "screenPixelDepth".to_string(),
+      json!(baseline.screen_pixel_depth),
+    );
+    obj.insert(
+      "devicePixelRatio".to_string(),
+      json!(baseline.device_pixel_ratio),
+    );
+    obj.insert(
+      "windowOuterWidth".to_string(),
+      json!(baseline.screen_avail_width),
+    );
+    obj.insert(
+      "windowOuterHeight".to_string(),
+      json!(baseline.screen_avail_height),
+    );
+    obj.insert("windowInnerWidth".to_string(), json!(inner_width));
+    obj.insert("windowInnerHeight".to_string(), json!(inner_height));
+    obj.insert("screenX".to_string(), json!(baseline.screen_avail_left));
+    obj.insert("screenY".to_string(), json!(baseline.screen_avail_top));
+  }
+
+  fn parse_actual_window_metrics(result: &serde_json::Value) -> Option<ActualWindowMetrics> {
+    let value = result.get("result")?.get("value")?.as_object()?;
+    Some(ActualWindowMetrics {
+      screen_width: Self::number_as_u32(value.get("screenWidth"))?,
+      screen_height: Self::number_as_u32(value.get("screenHeight"))?,
+      screen_avail_width: Self::number_as_u32(value.get("screenAvailWidth"))?,
+      screen_avail_height: Self::number_as_u32(value.get("screenAvailHeight"))?,
+      screen_avail_left: Self::number_as_i32(value.get("screenAvailLeft"))?,
+      screen_avail_top: Self::number_as_i32(value.get("screenAvailTop"))?,
+      screen_color_depth: Self::number_as_u32(value.get("screenColorDepth"))?,
+      screen_pixel_depth: Self::number_as_u32(value.get("screenPixelDepth"))?,
+      device_pixel_ratio: value
+        .get("devicePixelRatio")?
+        .as_f64()
+        .filter(|value| value.is_finite() && *value > 0.0)?,
+      window_outer_width: Self::number_as_u32(value.get("windowOuterWidth"))?,
+      window_outer_height: Self::number_as_u32(value.get("windowOuterHeight"))?,
+      window_inner_width: Self::number_as_u32(value.get("windowInnerWidth"))?,
+      window_inner_height: Self::number_as_u32(value.get("windowInnerHeight"))?,
+      screen_x: Self::number_as_i32(value.get("screenX"))?,
+      screen_y: Self::number_as_i32(value.get("screenY"))?,
+    })
+  }
+
+  fn apply_system_managed_window_metrics(
+    fingerprint: &mut serde_json::Value,
+    baseline: &WayfernDisplayBaseline,
+    metrics: &ActualWindowMetrics,
+  ) {
+    Self::apply_display_baseline(fingerprint, baseline);
+    let Some(obj) = fingerprint.as_object_mut() else {
+      return;
+    };
+    for (key, value) in [
+      ("windowOuterWidth", json!(metrics.window_outer_width)),
+      ("windowOuterHeight", json!(metrics.window_outer_height)),
+      ("windowInnerWidth", json!(metrics.window_inner_width)),
+      ("windowInnerHeight", json!(metrics.window_inner_height)),
+      ("screenX", json!(metrics.screen_x)),
+      ("screenY", json!(metrics.screen_y)),
+    ] {
+      obj.insert(key.to_string(), value);
+    }
+  }
+
+  fn append_window_launch_args(
+    args: &mut Vec<String>,
+    config: &WayfernConfig,
+    headless: bool,
+    ephemeral: bool,
+  ) {
+    if headless {
+      args.push("--headless=new".to_string());
+      return;
+    }
+
+    if let Some(baseline) = config.valid_display_baseline() {
+      #[cfg(target_os = "windows")]
+      args.push(format!(
+        "--force-device-scale-factor={}",
+        baseline.device_pixel_ratio
+      ));
+
+      if ephemeral || config.initial_window_maximized != Some(true) {
+        args.push(format!(
+          "--window-position={},{}",
+          baseline.screen_avail_left, baseline.screen_avail_top
+        ));
+        args.push("--start-maximized".to_string());
+      }
+    }
   }
 
   async fn wait_for_cdp_ready(
@@ -271,6 +525,64 @@ impl WayfernManager {
     }
 
     Err("No response received from CDP".into())
+  }
+
+  async fn read_actual_window_metrics(
+    &self,
+    ws_url: &str,
+  ) -> Result<ActualWindowMetrics, Box<dyn std::error::Error + Send + Sync>> {
+    let expression = r#"(() => ({
+      screenWidth: window.screen.width,
+      screenHeight: window.screen.height,
+      screenAvailWidth: window.screen.availWidth,
+      screenAvailHeight: window.screen.availHeight,
+      screenAvailLeft: window.screen.availLeft ?? 0,
+      screenAvailTop: window.screen.availTop ?? 0,
+      screenColorDepth: window.screen.colorDepth,
+      screenPixelDepth: window.screen.pixelDepth,
+      devicePixelRatio: window.devicePixelRatio,
+      windowOuterWidth: window.outerWidth,
+      windowOuterHeight: window.outerHeight,
+      windowInnerWidth: document.documentElement.clientWidth || window.innerWidth,
+      windowInnerHeight: document.documentElement.clientHeight || window.innerHeight,
+      screenX: window.screenX,
+      screenY: window.screenY
+    }))()"#;
+    let result = self
+      .send_cdp_command(
+        ws_url,
+        "Runtime.evaluate",
+        json!({ "expression": expression, "returnByValue": true }),
+      )
+      .await?;
+    Self::parse_actual_window_metrics(&result)
+      .ok_or_else(|| "CDP returned invalid window metrics".into())
+  }
+
+  async fn maximize_window(
+    &self,
+    ws_url: &str,
+  ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let window = self
+      .send_cdp_command(ws_url, "Browser.getWindowForTarget", json!({}))
+      .await?;
+    let window_id = window
+      .get("windowId")
+      .and_then(serde_json::Value::as_i64)
+      .ok_or("Browser.getWindowForTarget did not return a windowId")?;
+
+    self
+      .send_cdp_command(
+        ws_url,
+        "Browser.setWindowBounds",
+        json!({
+          "windowId": window_id,
+          "bounds": { "windowState": "maximized" }
+        }),
+      )
+      .await?;
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    Ok(())
   }
 
   /// Stable signature describing what determines this profile's geolocation
@@ -563,15 +875,7 @@ impl WayfernManager {
         "windows"
       });
 
-    // Include wayfern token if available (enables cross-OS fingerprinting for paid users)
-    let wayfern_token = crate::cloud_auth::CLOUD_AUTH.get_wayfern_token().await;
-    let mut refresh_params = json!({ "operatingSystem": os });
-    if let Some(ref token) = wayfern_token {
-      refresh_params
-        .as_object_mut()
-        .unwrap()
-        .insert("wayfernToken".to_string(), json!(token));
-    }
+    let refresh_params = json!({ "operatingSystem": os });
 
     let refresh_result = self
       .send_cdp_command(&ws_url, "Wayfern.refreshFingerprint", refresh_params)
@@ -639,6 +943,10 @@ impl WayfernManager {
         let geolocation_applied =
           Self::apply_geolocation(&mut normalized, geo_proxy.as_deref(), config.geoip.as_ref())
             .await;
+
+        if let Some(baseline) = config.valid_display_baseline() {
+          Self::apply_display_baseline(&mut normalized, baseline);
+        }
 
         if let Some(worker_id) = temp_worker_id {
           let _ = crate::proxy_runner::stop_proxy_process(&worker_id).await;
@@ -816,21 +1124,7 @@ impl WayfernManager {
       "--password-store=basic".to_string(),
     ];
 
-    if headless {
-      args.push("--headless=new".to_string());
-    } else if let Some((w, h)) = config
-      .fingerprint
-      .as_deref()
-      .and_then(Self::window_size_from_fingerprint)
-    {
-      // Size the real OS window to match the fingerprint so the visible window
-      // agrees with the reported windowOuterWidth/screen dimensions. Anchor at
-      // 0,0 so the window also fits within the spoofed screen origin. Skipped in
-      // headless mode, where there is no on-screen window.
-      log::info!("Sizing Wayfern window to fingerprint dimensions: {w}x{h}");
-      args.push(format!("--window-size={w},{h}"));
-      args.push("--window-position=0,0".to_string());
-    }
+    Self::append_window_launch_args(&mut args, config, headless, ephemeral);
 
     #[cfg(target_os = "linux")]
     {
@@ -884,37 +1178,6 @@ impl WayfernManager {
     let profile_color = profile_color.trim().trim_start_matches('#');
     args.push(format!("--wayfern-profile-color={profile_color}"));
 
-    let mut wayfern_token = crate::cloud_auth::CLOUD_AUTH.get_wayfern_token().await;
-    if wayfern_token.is_none()
-      && crate::cloud_auth::CLOUD_AUTH
-        .has_active_paid_subscription()
-        .await
-    {
-      // Brief wait for the background token fetch — when the API is healthy
-      // the token usually lands in well under a second. If api.donutbrowser.com
-      // is unreachable we don't want to gate the whole launch on it; the
-      // browser still works without the token (cross-OS fingerprinting just
-      // won't be enabled for this session, and the next launch will pick it
-      // up once the token arrives).
-      log::info!("Wayfern token not ready for paid user, waiting briefly...");
-      for _ in 0..3 {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        wayfern_token = crate::cloud_auth::CLOUD_AUTH.get_wayfern_token().await;
-        if wayfern_token.is_some() {
-          break;
-        }
-      }
-      if wayfern_token.is_none() {
-        log::warn!(
-          "Wayfern token still unavailable after wait; launching without it (api.donutbrowser.com may be unreachable)"
-        );
-      }
-    }
-    if let Some(ref token) = wayfern_token {
-      args.push(format!("--wayfern-token={token}"));
-      log::info!("Wayfern token passed as CLI flag (length: {})", token.len());
-    }
-
     if let Some(proxy) = proxy_url {
       // Map the local proxy scheme to the matching PAC directive. SOCKS5 lets
       // Chromium route UDP (QUIC/WebRTC) and resolve DNS through the proxy;
@@ -965,6 +1228,30 @@ impl WayfernManager {
     let page_targets: Vec<_> = targets.iter().filter(|t| t.target_type == "page").collect();
     log::info!("Found {} page targets", page_targets.len());
 
+    let should_maximize_initial_window = !headless
+      && (ephemeral
+        || (config.valid_display_baseline().is_some()
+          && config.initial_window_maximized != Some(true)));
+    let mut initial_window_maximized = false;
+    if should_maximize_initial_window {
+      if let Some(ws_url) = page_targets
+        .iter()
+        .find_map(|target| target.websocket_debugger_url.as_deref())
+      {
+        match self.maximize_window(ws_url).await {
+          Ok(()) => {
+            initial_window_maximized = true;
+            log::info!("Wayfern initial window maximized through CDP");
+          }
+          Err(error) => {
+            log::warn!(
+              "Could not confirm the initial Wayfern window was maximized; it will be retried on the next launch: {error}"
+            );
+          }
+        }
+      }
+    }
+
     // Apply fingerprint if configured
     let mut used_fingerprint: Option<String> = None;
     if let Some(fingerprint_json) = &config.fingerprint {
@@ -1009,6 +1296,43 @@ impl WayfernManager {
         }
       }
 
+      let mut actual_window_metrics = None;
+      if let Some(baseline) = config
+        .valid_display_baseline()
+        .filter(|_| config.should_sync_display_fingerprint())
+      {
+        if let Some(ws_url) = page_targets
+          .iter()
+          .find_map(|target| target.websocket_debugger_url.as_deref())
+        {
+          match self.read_actual_window_metrics(ws_url).await {
+            Ok(metrics) => {
+              log::info!(
+                "Synchronizing Wayfern fingerprint with actual window: outer={}x{}, inner={}x{}, screen={}x{}, dpr={}",
+                metrics.window_outer_width,
+                metrics.window_outer_height,
+                metrics.window_inner_width,
+                metrics.window_inner_height,
+                metrics.screen_width,
+                metrics.screen_height,
+                metrics.device_pixel_ratio
+              );
+              Self::apply_system_managed_window_metrics(
+                &mut fingerprint_for_cdp,
+                baseline,
+                &metrics,
+              );
+              actual_window_metrics = Some(metrics);
+            }
+            Err(error) => {
+              log::warn!(
+                "Could not read actual Wayfern window metrics; using the stored display baseline: {error}"
+              );
+            }
+          }
+        }
+      }
+
       log::info!(
         "Fingerprint prepared for CDP command, fields: {:?}",
         fingerprint_for_cdp
@@ -1029,14 +1353,7 @@ impl WayfernManager {
         );
       }
 
-      // Include wayfern token if available (enables cross-OS fingerprinting for paid users)
-      let wayfern_token = crate::cloud_auth::CLOUD_AUTH.get_wayfern_token().await;
-      let mut fingerprint_params = fingerprint_for_cdp.clone();
-      if let Some(ref token) = wayfern_token {
-        if let Some(obj) = fingerprint_params.as_object_mut() {
-          obj.insert("wayfernToken".to_string(), json!(token));
-        }
-      }
+      let fingerprint_params = fingerprint_for_cdp.clone();
 
       for target in &page_targets {
         if let Some(ws_url) = &target.websocket_debugger_url {
@@ -1060,7 +1377,16 @@ impl WayfernManager {
                 // { fingerprint: {...} }; tolerate a bare object too.
                 let fp = result.get("fingerprint").cloned().unwrap_or(result);
                 if fp.is_object() {
-                  match serde_json::to_string(&Self::normalize_fingerprint(fp)) {
+                  let mut normalized = Self::normalize_fingerprint(fp);
+                  if config.should_sync_display_fingerprint() {
+                    if let (Some(baseline), Some(metrics)) = (
+                      config.valid_display_baseline(),
+                      actual_window_metrics.as_ref(),
+                    ) {
+                      Self::apply_system_managed_window_metrics(&mut normalized, baseline, metrics);
+                    }
+                  }
+                  match serde_json::to_string(&normalized) {
                     Ok(s) => used_fingerprint = Some(s),
                     Err(e) => {
                       log::warn!("Failed to serialize used fingerprint: {e}")
@@ -1134,6 +1460,7 @@ impl WayfernManager {
       url: url.map(|s| s.to_string()),
       cdp_port: Some(port),
       used_fingerprint,
+      initial_window_maximized,
     })
   }
 
@@ -1276,6 +1603,7 @@ impl WayfernManager {
               url: instance.url.clone(),
               cdp_port: instance.cdp_port,
               used_fingerprint: None,
+              initial_window_maximized: false,
             });
           } else {
             log::info!(
@@ -1319,6 +1647,7 @@ impl WayfernManager {
         url: None,
         cdp_port,
         used_fingerprint: None,
+        initial_window_maximized: false,
       });
     }
 
@@ -1496,6 +1825,22 @@ fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (u8, u8, u8) {
 mod tests {
   use super::*;
 
+  fn display_baseline() -> WayfernDisplayBaseline {
+    WayfernDisplayBaseline {
+      physical_width: Some(2400),
+      physical_height: Some(1350),
+      screen_width: 1920,
+      screen_height: 1080,
+      screen_avail_width: 1920,
+      screen_avail_height: 1032,
+      screen_avail_left: -1920,
+      screen_avail_top: 0,
+      device_pixel_ratio: 1.25,
+      screen_color_depth: 24,
+      screen_pixel_depth: 24,
+    }
+  }
+
   #[test]
   fn remote_socks_url_detection() {
     // Remote socks upstreams (the hyper-util-affected case) are detected...
@@ -1528,66 +1873,181 @@ mod tests {
   }
 
   #[test]
-  fn window_size_prefers_outer_window_dimensions() {
-    // Field names + values mirror a real Wayfern fingerprint (camelCase).
-    let fp = r#"{"windowOuterWidth": 1268, "windowOuterHeight": 764,
-                 "windowInnerWidth": 1253, "windowInnerHeight": 630,
-                 "screenAvailWidth": 1280, "screenAvailHeight": 775,
-                 "screenWidth": 1280, "screenHeight": 800}"#;
-    assert_eq!(
-      WayfernManager::window_size_from_fingerprint(fp),
-      Some((1268, 764))
-    );
+  fn display_baseline_replaces_generated_window_values() {
+    let mut fingerprint = json!({
+      "screenWidth": 1280,
+      "screenHeight": 800,
+      "windowOuterWidth": 1280,
+      "windowOuterHeight": 775,
+      "windowInnerWidth": 1264,
+      "windowInnerHeight": 689
+    });
+
+    WayfernManager::apply_display_baseline(&mut fingerprint, &display_baseline());
+
+    assert_eq!(fingerprint["screenWidth"], 1920);
+    assert_eq!(fingerprint["screenAvailHeight"], 1032);
+    assert_eq!(fingerprint["windowOuterWidth"], 1920);
+    assert_eq!(fingerprint["windowOuterHeight"], 1032);
+    assert_eq!(fingerprint["windowInnerWidth"], 1904);
+    assert_eq!(fingerprint["windowInnerHeight"], 946);
+    assert_eq!(fingerprint["screenX"], -1920);
+    assert_eq!(fingerprint["devicePixelRatio"], 1.25);
   }
 
   #[test]
-  fn window_size_falls_back_to_avail_then_full_screen() {
-    let avail = r#"{"screenAvailWidth": 1280, "screenAvailHeight": 775,
-                    "screenWidth": 1280, "screenHeight": 800}"#;
-    assert_eq!(
-      WayfernManager::window_size_from_fingerprint(avail),
-      Some((1280, 775))
-    );
+  fn manual_display_fingerprint_disables_runtime_display_sync() {
+    let automatic = WayfernConfig::default();
+    let manual = WayfernConfig {
+      manual_display_fingerprint: Some(true),
+      ..WayfernConfig::default()
+    };
 
-    let full = r#"{"screenWidth": 2560, "screenHeight": 1440}"#;
-    assert_eq!(
-      WayfernManager::window_size_from_fingerprint(full),
-      Some((2560, 1440))
-    );
+    assert!(automatic.should_sync_display_fingerprint());
+    assert!(!manual.should_sync_display_fingerprint());
   }
 
   #[test]
-  fn window_size_handles_wrapper_and_stringified_numbers() {
-    let wrapped = r#"{"fingerprint": {"windowOuterWidth": "1366", "windowOuterHeight": "768"}}"#;
-    assert_eq!(
-      WayfernManager::window_size_from_fingerprint(wrapped),
-      Some((1366, 768))
-    );
+  fn system_managed_first_launch_maximizes_on_target_display() {
+    let config = WayfernConfig {
+      display_baseline: Some(display_baseline()),
+      initial_window_maximized: Some(false),
+      ..WayfernConfig::default()
+    };
+    let mut args = Vec::new();
+
+    WayfernManager::append_window_launch_args(&mut args, &config, false, false);
+
+    assert!(args.contains(&"--window-position=-1920,0".to_string()));
+    assert!(args.contains(&"--start-maximized".to_string()));
+    #[cfg(target_os = "windows")]
+    assert!(args.contains(&"--force-device-scale-factor=1.25".to_string()));
+    assert!(!args.iter().any(|arg| arg.starts_with("--window-size=")));
   }
 
   #[test]
-  fn window_size_none_when_missing_or_invalid() {
-    // No dimensions at all.
-    assert_eq!(
-      WayfernManager::window_size_from_fingerprint(r#"{"userAgent": "x"}"#),
-      None
+  fn system_managed_later_launch_restores_chromium_window_state() {
+    let config = WayfernConfig {
+      display_baseline: Some(display_baseline()),
+      initial_window_maximized: Some(true),
+      ..WayfernConfig::default()
+    };
+    let mut args = Vec::new();
+
+    WayfernManager::append_window_launch_args(&mut args, &config, false, false);
+
+    #[cfg(target_os = "windows")]
+    assert_eq!(args, vec!["--force-device-scale-factor=1.25".to_string()]);
+    #[cfg(not(target_os = "windows"))]
+    assert!(args.is_empty());
+  }
+
+  #[test]
+  fn system_managed_ephemeral_profile_maximizes_every_time() {
+    let config = WayfernConfig {
+      display_baseline: Some(display_baseline()),
+      initial_window_maximized: Some(true),
+      ..WayfernConfig::default()
+    };
+    let mut args = Vec::new();
+
+    WayfernManager::append_window_launch_args(&mut args, &config, false, true);
+
+    assert!(args.contains(&"--start-maximized".to_string()));
+  }
+
+  #[test]
+  fn system_managed_headless_launch_has_no_window_arguments() {
+    let config = WayfernConfig {
+      display_baseline: Some(display_baseline()),
+      initial_window_maximized: Some(false),
+      ..WayfernConfig::default()
+    };
+    let mut args = Vec::new();
+
+    WayfernManager::append_window_launch_args(&mut args, &config, true, false);
+
+    assert_eq!(args, vec!["--headless=new".to_string()]);
+  }
+
+  #[test]
+  fn legacy_profile_leaves_window_size_to_operating_system() {
+    let config = WayfernConfig {
+      fingerprint: Some(r#"{"windowOuterWidth": 1366, "windowOuterHeight": 768}"#.to_string()),
+      ..WayfernConfig::default()
+    };
+    let mut args = Vec::new();
+
+    WayfernManager::append_window_launch_args(&mut args, &config, false, false);
+
+    assert!(args.is_empty());
+  }
+
+  #[test]
+  fn actual_window_metrics_parse_layout_values() {
+    let result = json!({
+      "result": {
+        "value": {
+          "screenWidth": 2560,
+          "screenHeight": 1440,
+          "screenAvailWidth": 2560,
+          "screenAvailHeight": 1400,
+          "screenAvailLeft": 1920,
+          "screenAvailTop": 0,
+          "screenColorDepth": 30,
+          "screenPixelDepth": 30,
+          "devicePixelRatio": 1.5,
+          "windowOuterWidth": 1200,
+          "windowOuterHeight": 900,
+          "windowInnerWidth": 1184,
+          "windowInnerHeight": 814,
+          "screenX": 2100,
+          "screenY": 100
+        }
+      }
+    });
+    let metrics = WayfernManager::parse_actual_window_metrics(&result).unwrap();
+
+    assert_eq!(metrics.screen_width, 2560);
+    assert_eq!(metrics.window_outer_width, 1200);
+    assert_eq!(metrics.window_inner_height, 814);
+    assert_eq!(metrics.screen_x, 2100);
+    assert_eq!(metrics.device_pixel_ratio, 1.5);
+  }
+
+  #[test]
+  fn system_managed_metrics_keep_system_screen_and_dpr() {
+    let metrics = ActualWindowMetrics {
+      screen_width: 2560,
+      screen_height: 1315,
+      screen_avail_width: 2560,
+      screen_avail_height: 1275,
+      screen_avail_left: 0,
+      screen_avail_top: 0,
+      screen_color_depth: 32,
+      screen_pixel_depth: 32,
+      device_pixel_ratio: 1.0,
+      window_outer_width: 2048,
+      window_outer_height: 1240,
+      window_inner_width: 2032,
+      window_inner_height: 1119,
+      screen_x: 0,
+      screen_y: 0,
+    };
+    let mut fingerprint = json!({ "userAgent": "kept" });
+
+    WayfernManager::apply_system_managed_window_metrics(
+      &mut fingerprint,
+      &display_baseline(),
+      &metrics,
     );
-    // A width with no matching height is not a usable pair.
-    assert_eq!(
-      WayfernManager::window_size_from_fingerprint(r#"{"windowOuterWidth": 1268}"#),
-      None
-    );
-    // Zero is rejected as a degenerate size.
-    assert_eq!(
-      WayfernManager::window_size_from_fingerprint(
-        r#"{"windowOuterWidth": 0, "windowOuterHeight": 0}"#
-      ),
-      None
-    );
-    // Not valid JSON.
-    assert_eq!(
-      WayfernManager::window_size_from_fingerprint("not json"),
-      None
-    );
+
+    assert_eq!(fingerprint["userAgent"], "kept");
+    assert_eq!(fingerprint["screenWidth"], 1920);
+    assert_eq!(fingerprint["screenHeight"], 1080);
+    assert_eq!(fingerprint["screenAvailHeight"], 1032);
+    assert_eq!(fingerprint["devicePixelRatio"], 1.25);
+    assert_eq!(fingerprint["windowOuterWidth"], 2048);
+    assert_eq!(fingerprint["windowInnerHeight"], 1119);
   }
 }

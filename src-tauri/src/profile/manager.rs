@@ -1,5 +1,4 @@
 use crate::browser::{create_browser, BrowserType};
-use crate::cloud_auth::CLOUD_AUTH;
 use crate::downloaded_browsers_registry::DownloadedBrowsersRegistry;
 use crate::events;
 use crate::profile::types::{get_host_os, BrowserProfile, SyncMode};
@@ -94,15 +93,18 @@ impl ProfileManager {
       return Err("Cannot set both proxy_id and vpn_id".into());
     }
 
-    let launch_hook = Self::normalize_launch_hook(launch_hook)?;
-
-    // Sync cloud proxy credentials if the profile uses a cloud or cloud-derived proxy
-    if let Some(ref pid) = proxy_id {
-      if PROXY_MANAGER.is_cloud_or_derived(pid) || pid == crate::proxy_manager::CLOUD_PROXY_ID {
-        log::info!("Syncing cloud proxy credentials before profile creation");
-        CLOUD_AUTH.sync_cloud_proxy().await;
-      }
+    let fingerprint_os = wayfern_config
+      .as_ref()
+      .and_then(|config| config.os.as_deref());
+    if !crate::profile::types::is_fingerprint_os_allowed(fingerprint_os) {
+      return Err(
+        serde_json::json!({ "code": "CROSS_OS_FINGERPRINT_UNSUPPORTED" })
+          .to_string()
+          .into(),
+      );
     }
+
+    let launch_hook = Self::normalize_launch_hook(launch_hook)?;
 
     log::info!("Attempting to create profile: {name}");
 
@@ -142,6 +144,11 @@ impl ProfileManager {
         log::info!("Creating default Wayfern config for profile: {name}");
         crate::wayfern_manager::WayfernConfig::default()
       });
+
+      crate::wayfern_manager::WayfernManager::apply_current_display_baseline(
+        app_handle,
+        &mut config,
+      );
 
       // Always ensure executable_path is set to the user's binary location
       // Pass upstream proxy information to config for fingerprint generation
@@ -1032,6 +1039,7 @@ impl ProfileManager {
     // isolation between a clone and its source.
     if let Some(cfg) = new_profile.wayfern_config.as_mut() {
       cfg.fingerprint = None;
+      cfg.manual_display_fingerprint = Some(false);
     }
 
     self.save_profile(&new_profile)?;
@@ -1049,6 +1057,14 @@ impl ProfileManager {
     profile_id: &str,
     config: WayfernConfig,
   ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if !crate::profile::types::is_fingerprint_os_allowed(config.os.as_deref()) {
+      return Err(
+        serde_json::json!({ "code": "CROSS_OS_FINGERPRINT_UNSUPPORTED" })
+          .to_string()
+          .into(),
+      );
+    }
+
     // Find the profile by ID
     let profile_uuid = uuid::Uuid::parse_str(profile_id).map_err(
       |_| -> Box<dyn std::error::Error + Send + Sync> {
@@ -1068,6 +1084,14 @@ impl ProfileManager {
         format!("Profile with ID '{profile_id}' not found").into()
       })?;
 
+    if profile.is_cross_os() {
+      return Err(
+        serde_json::json!({ "code": "CROSS_OS_FINGERPRINT_UNSUPPORTED" })
+          .to_string()
+          .into(),
+      );
+    }
+
     // Check if the browser is currently running using the comprehensive status check
     let is_running = self
       .check_browser_status(app_handle.clone(), &profile)
@@ -1081,6 +1105,7 @@ impl ProfileManager {
 
     // Update the Wayfern configuration
     profile.wayfern_config = Some(config);
+    profile.updated_at = Some(crate::proxy_manager::now_secs());
 
     // Save the updated profile
     self
@@ -1834,15 +1859,6 @@ pub async fn create_browser_profile_new(
   dns_blocklist: Option<String>,
   launch_hook: Option<String>,
 ) -> Result<BrowserProfile, String> {
-  let fingerprint_os = wayfern_config.as_ref().and_then(|c| c.os.as_deref());
-
-  if !crate::cloud_auth::CLOUD_AUTH
-    .is_fingerprint_os_allowed(fingerprint_os)
-    .await
-  {
-    return Err("Fingerprint OS spoofing requires an active Pro subscription".to_string());
-  }
-
   // A dead/unreachable proxy or VPN (or a 402 from an expired proxy
   // subscription) cancels creation with a translatable error.
   crate::validate_profile_network(proxy_id.as_deref(), vpn_id.as_deref()).await?;
@@ -1872,26 +1888,11 @@ pub async fn update_wayfern_config(
   profile_id: String,
   config: WayfernConfig,
 ) -> Result<(), String> {
-  if config.fingerprint.is_some()
-    && !crate::cloud_auth::CLOUD_AUTH
-      .can_use_cross_os_fingerprints()
-      .await
-  {
-    return Err(serde_json::json!({ "code": "FINGERPRINT_REQUIRES_PRO" }).to_string());
-  }
-
-  if !crate::cloud_auth::CLOUD_AUTH
-    .is_fingerprint_os_allowed(config.os.as_deref())
-    .await
-  {
-    return Err("Fingerprint OS spoofing requires an active Pro subscription".to_string());
-  }
-
   let profile_manager = ProfileManager::instance();
   profile_manager
     .update_wayfern_config(app_handle, &profile_id, config)
     .await
-    .map_err(|e| format!("Failed to update Wayfern config: {e}"))
+    .map_err(|e| crate::wrap_backend_error(e, "Failed to update Wayfern config"))
 }
 
 #[tauri::command]

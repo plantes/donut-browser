@@ -25,7 +25,7 @@ export type AppPage =
   | "vpns"
   | "settings"
   | "integrations"
-  | "account"
+  | "sync"
   | "import"
   | "shortcuts";
 
@@ -250,7 +250,7 @@ const TOP_ITEMS: RailItem[] = [
   { page: "extensions", Icon: LuPuzzle, labelKey: "rail.extensions" },
   { page: "groups", Icon: LuUsers, labelKey: "rail.groups" },
   { page: "integrations", Icon: LuPlug, labelKey: "rail.integrations" },
-  { page: "account", Icon: LuCloud, labelKey: "rail.account" },
+  { page: "sync", Icon: LuCloud, labelKey: "rail.sync" },
 ];
 
 interface MoreMenuItem {

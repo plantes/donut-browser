@@ -31,7 +31,7 @@ donutbrowser/
 │   │   ├── proxy_storage.rs         # Proxy config persistence (JSON files)
 │   │   ├── api_server.rs            # REST API (utoipa + axum)
 │   │   ├── mcp_server.rs            # MCP protocol server
-│   │   ├── sync/                    # Cloud sync (engine, encryption, manifest, scheduler)
+│   │   ├── sync/                    # Self-hosted sync (engine, encryption, manifest, scheduler)
 │   │   ├── vpn/                     # WireGuard tunnels
 │   │   ├── wayfern_manager.rs       # Wayfern (Chromium) browser management
 │   │   ├── downloader.rs           # Browser binary downloader
@@ -42,7 +42,7 @@ donutbrowser/
 │   │   ├── group_manager.rs        # Profile group management
 │   │   ├── synchronizer.rs         # Real-time profile synchronizer
 │   │   ├── daemon/                 # Background daemon + tray icon (currently disabled)
-│   │   └── cloud_auth.rs           # Cloud authentication
+│   │   └── legacy_cleanup.rs       # One-way cleanup for removed cloud account state
 │   ├── tests/                      # Integration tests
 │   └── Cargo.toml                  # Rust dependencies
 ├── donut-sync/                     # NestJS sync server (self-hostable)
@@ -118,10 +118,10 @@ The served `/openapi.json` comes from the hand-maintained `ApiDoc` derive (`#[de
 Handlers route manager errors through `manager_error_response`, which maps message content onto a consistent status and passes the text through as the response body:
 
 - `401` — missing/invalid bearer token (auth middleware; empty body).
-- `402` — the five automation endpoints (`run`, `open-url`, `kill`, `batch/run`, `batch/stop`) without a paid plan, and expired-proxy (`PROXY_PAYMENT_REQUIRED`) checks.
+- `402` — expired upstream proxy (`PROXY_PAYMENT_REQUIRED`) checks; local automation endpoints are available without a plan.
 - `404` — entity not found (`… not found` / `*_NOT_FOUND`).
 - `400` — validation, duplicates, empty names, invalid/unsupported/unavailable input.
-- `409` — conflicts: browser version already being downloaded, profile locked by another team member (run), browser running during cookie import.
+- `409` — conflicts: browser version already being downloaded, or browser running during cookie import.
 - `500` — internal failures (IO, network, poisoned locks).
 
 Error bodies are plain-text diagnostics; some are the JSON `{"code": ...}` strings shared with the Tauri commands (e.g. `NAME_CANNOT_BE_EMPTY`, `GROUP_ALREADY_EXISTS`). The translated-error rule above applies to Tauri commands, not to REST bodies.
@@ -245,10 +245,10 @@ The `.github/workflows/publish-repos.yml` workflow runs automatically after stab
 
 Required env vars / secrets: `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL`, `R2_BUCKET_NAME`.
 
-## Sync (cloud / self-hosted)
+## Sync (self-hosted)
 
-Sync mirrors local state to S3-compatible storage (Donut cloud, or a self-hosted
-`donut-sync` NestJS server). Two distinct mechanisms live in `src-tauri/src/sync/`:
+Sync mirrors local state to S3-compatible storage through a self-hosted
+`donut-sync` NestJS server. Two distinct mechanisms live in `src-tauri/src/sync/`:
 
 - **Profile browser files** (the Chromium/Firefox profile directory): a
   **content-hash manifest** (`manifest.rs` `generate_manifest`/`compute_diff`) —

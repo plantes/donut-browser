@@ -68,6 +68,20 @@ impl GeoIPDownloader {
   fn is_geoip_stale() -> bool {
     let timestamp_path = Self::get_timestamp_path();
     let Ok(content) = std::fs::read_to_string(&timestamp_path) else {
+      // Portable/offline builds may ship the database without a timestamp.
+      // Treat it as freshly installed on first use so startup never requires
+      // a network request just to initialize the bundled database.
+      if Self::is_geoip_database_available() {
+        if let Some(parent) = timestamp_path.parent() {
+          let _ = std::fs::create_dir_all(parent);
+        }
+        let now = std::time::SystemTime::now()
+          .duration_since(std::time::UNIX_EPOCH)
+          .unwrap_or_default()
+          .as_secs();
+        let _ = std::fs::write(&timestamp_path, now.to_string());
+        return false;
+      }
       return true;
     };
     let Ok(timestamp) = content.trim().parse::<u64>() else {
@@ -422,6 +436,18 @@ mod tests {
     let eight_days_ago = now - 8 * 24 * 60 * 60;
     std::fs::write(&timestamp_path, eight_days_ago.to_string()).unwrap();
     assert!(GeoIPDownloader::is_geoip_stale());
+  }
+
+  #[test]
+  fn test_bundled_geoip_without_timestamp_is_initialized_locally() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let _guard = crate::app_dirs::set_test_cache_dir(tmp.path().to_path_buf());
+    let mmdb_path = GeoIPDownloader::get_mmdb_file_path().unwrap();
+    std::fs::create_dir_all(mmdb_path.parent().unwrap()).unwrap();
+    std::fs::write(&mmdb_path, b"bundled database").unwrap();
+
+    assert!(!GeoIPDownloader::is_geoip_stale());
+    assert!(GeoIPDownloader::get_timestamp_path().exists());
   }
 
   #[test]

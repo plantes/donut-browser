@@ -165,7 +165,6 @@
       "passwordSaved": "Encryption password set",
       "passwordMismatch": "Passwords do not match",
       "passwordTooShort": "Password must be at least 8 characters",
-      "requiresProOrOwner": "Profile encryption is available for Pro users and team owners.",
       "validatePassword": "Validate",
       "validateDialog": {
         "title": "Validate Encryption Password",
@@ -174,15 +173,6 @@
         "matchToast": "Password is correct",
         "mismatchToast": "Password does not match"
       }
-    },
-    "commercial": {
-      "title": "Commercial License",
-      "trialActive": "Trial: {{days}} days, {{hours}} hours remaining",
-      "trialActiveDescription": "Commercial use is free during the trial. When it ends, all features keep working — personal use stays free, only commercial use will require a license.",
-      "trialExpired": "Trial expired",
-      "trialExpiredDescription": "Personal use remains free. Commercial use requires a license.",
-      "subscriptionActive": "Subscribed — {{plan}} plan",
-      "subscriptionActiveDescription": "Your Donut Browser subscription is active. Commercial use is licensed for the duration of your plan."
     },
     "advanced": {
       "title": "Advanced",
@@ -208,7 +198,7 @@
       "settings": "Settings",
       "proxies": "Proxies & VPNs",
       "groups": "Groups",
-      "syncService": "Account",
+      "syncService": "Sync",
       "integrations": "Integrations",
       "importProfile": "Import Profile",
       "extensions": "Extensions"
@@ -270,7 +260,6 @@
       "stopLeader": "Stop this profile and all its followers",
       "stopFollower": "Following actions of {{leaderName}}",
       "desyncedTooltip": "Synchronization failed at {{url}}",
-      "paidFeature": "Synchronizer is a paid feature",
       "wayfernOnly": "Only Wayfern profiles can be synchronized",
       "selectFollowers": "Select Follower Profiles",
       "selectFollowersDesc": "Choose profiles that will mirror the actions of the leader profile. Only stopped Wayfern profiles can be selected.",
@@ -307,8 +296,7 @@
       "assignExtensionGroup": "Assign Extension Group",
       "copyCookies": "Copy Cookies",
       "runSelected": "Run selected",
-      "stopSelected": "Stop selected",
-      "proRequired": "Pro plan required for bulk run/stop"
+      "stopSelected": "Stop selected"
     },
     "passwordProtectedBadge": "Password Protected",
     "launchHook": {
@@ -602,7 +590,7 @@
       "notConfigured": "Sync service not configured.",
       "configureService": "Configure Sync Service"
     },
-    "title": "Account",
+    "title": "Sync",
     "config": {
       "serverUrlRequired": "Please enter a server URL",
       "connectionSuccess": "Connection successful!",
@@ -611,7 +599,9 @@
       "settingsSaved": "Sync settings saved",
       "saveFailed": "Failed to save settings",
       "disconnected": "Sync disconnected",
-      "disconnectFailed": "Failed to disconnect"
+      "disconnectFailed": "Failed to disconnect",
+      "testConnection": "Test connection",
+      "disconnect": "Disconnect"
     },
     "serverUrl": "Server URL",
     "serverUrlPlaceholder": "https://sync.example.com",
@@ -624,40 +614,6 @@
       "error": "Sync Error"
     },
     "description": "Connect to a sync server to synchronize your profiles, proxies, and groups across devices.",
-    "cloud": {
-      "tabLabel": "Cloud",
-      "selfHostedTabLabel": "Self-Hosted",
-      "email": "Email",
-      "deviceLinkInstructions": "Click \"Login\" to open the login page in your browser. Once signed in there, copy the code shown and paste it below.",
-      "openLogin": "Login",
-      "linkCodeLabel": "Login code",
-      "linkCodePlaceholder": "Paste the code from the website",
-      "signInTitle": "Sign in",
-      "verifyAndLogin": "Verify & Log In",
-      "loggingIn": "Logging in...",
-      "connected": "Connected",
-      "plan": "Plan",
-      "profiles": "Profiles",
-      "profileUsage": "{{used}} / {{limit}}",
-      "manageAccount": "Manage Account",
-      "logout": "Log Out",
-      "logoutConfirm": "Are you sure you want to log out? Cloud sync will stop.",
-      "loginSuccess": "Successfully logged in!",
-      "logoutSuccess": "Successfully logged out."
-    },
-    "team": {
-      "title": "Team",
-      "name": "Team Name",
-      "role": "Role",
-      "roleOwner": "Owner",
-      "roleAdmin": "Admin",
-      "roleMember": "Member",
-      "manageOnWeb": "Manage team on the web dashboard",
-      "profileLocked": "In use by {{email}}",
-      "profileLockedShort": "In use",
-      "cannotLaunchLocked": "Cannot launch — profile is in use by {{email}}",
-      "createdBy": "Created by {{email}}"
-    },
     "disabled": "Disabled",
     "toast": {
       "profileSynced": "Profile '{{name}}' synced successfully",
@@ -846,8 +802,7 @@
       "selectFile": "Choose File",
       "preview": "{{count}} cookies found",
       "success": "Successfully imported {{imported}} cookies ({{replaced}} replaced)",
-      "error": "Failed to import cookies",
-      "proFeature": "Cookie import is a Pro feature"
+      "error": "Failed to import cookies"
     },
     "export": {
       "title": "Export Cookies",
@@ -1000,6 +955,11 @@
     "colorDepth": "Color Depth",
     "pixelDepth": "Pixel Depth",
     "devicePixelRatio": "Device Pixel Ratio",
+    "systemManagedDisplay": "System-managed display",
+    "systemManagedDisplayDescription": "The first launch is maximized within the current display's work area. Later launches restore the window state you chose.",
+    "currentScreen": "Current screen",
+    "availableArea": "Available work area",
+    "systemManagedFieldsReadOnly": "Screen, window, position, and pixel ratio values are managed from the actual browser window and synchronized at launch.",
     "windowProperties": "Window Properties",
     "outerWidth": "Outer Width",
     "outerHeight": "Outer Height",
@@ -1053,7 +1013,6 @@
     "productSub": "Product Sub",
     "brand": "Brand",
     "brandVersion": "Brand Version",
-    "proFeature": "This is a Pro feature",
     "generateFingerprint": "Generate Fingerprint",
     "refreshFingerprint": "Refresh Fingerprint",
     "canvasNoiseSeedPlaceholder": "Enter a seed string for canvas fingerprint",
@@ -1193,9 +1152,7 @@
       "cannotWhileRunning": "Stop the profile before changing its password."
     },
     "fingerprint": {
-      "notSupported": "Fingerprint editing is only available for Wayfern profiles.",
-      "lockedTitle": "Viewing & editing the fingerprint is a Pro feature",
-      "lockedDescription": "Your device information is protected in every profile. Viewing and editing a profile's fingerprint requires an active paid plan."
+      "notSupported": "Fingerprint editing is only available for Wayfern profiles."
     },
     "syncStatusValue": {
       "waiting": "Waiting",
@@ -1212,7 +1169,6 @@
     "extensionsTab": "Extensions",
     "groupsTab": "Groups",
     "managedNotice": "Extensions managed here will replace any manually installed extensions in profiles when launched.",
-    "proRequired": "Extension management is a Pro feature",
     "empty": "No extensions uploaded yet.",
     "noGroups": "No extension groups created yet.",
     "createGroup": "Create Group",
@@ -1270,14 +1226,6 @@
       "groupsDescription": "Delete {{count}} extension groups? {{names}}",
       "confirmButton": "Delete"
     }
-  },
-  "pro": {
-    "badge": "PRO",
-    "fingerprintLocked": "Fingerprint editing is a Pro feature",
-    "cookieCopyLocked": "Cookie copying is a Pro feature",
-    "cookieImportLocked": "Cookie import is a Pro feature",
-    "cookieExportLocked": "Cookie export is a Pro feature",
-    "cookieManagementLocked": "Cookie management is a Pro feature"
   },
   "dnsBlocklist": {
     "title": "DNS Blocklist",
@@ -1545,14 +1493,6 @@
     "acceptFailed": "Failed to accept terms",
     "tryAgain": "Please try again"
   },
-  "commercialTrial": {
-    "title": "Commercial Trial Expired",
-    "description": "Your 2-week commercial trial period has ended.",
-    "body": "If you are using Donut Browser for business purposes, you need to purchase a commercial license to continue. You can still use it for personal use for free.",
-    "understandButton": "I Understand",
-    "failed": "Failed to save acknowledgment",
-    "tryAgain": "Please try again"
-  },
   "permissionDialog": {
     "titleMicrophone": "Microphone Access Required",
     "titleCamera": "Camera Access Required",
@@ -1786,15 +1726,12 @@
     "vpnNotFound": "VPN not found",
     "extensionNotFound": "Extension not found",
     "extensionGroupNotFound": "Extension group not found",
-    "cannotModifyCloudManagedProxy": "Cannot modify sync for a cloud-managed proxy",
     "syncLockedByProfile": "Sync cannot be disabled while this is used by synced profiles",
-    "syncNotConfigured": "Sync is not configured. Sign in or configure a self-hosted server first.",
+    "syncNotConfigured": "Sync is not configured. Configure a self-hosted server first.",
     "internal": "Something went wrong: {{detail}}",
     "invalidLaunchHookUrl": "Invalid launch hook URL. Use a full http:// or https:// URL.",
     "cookieDbLocked": "Could not read cookies — the database is locked. Close the browser and try again.",
     "cookieDbUnavailable": "Could not read cookies — the cookie store is unavailable.",
-    "selfHostedRequiresLogout": "Sign out of your Donut account before configuring a self-hosted server.",
-    "fingerprintRequiresPro": "Viewing or editing the fingerprint requires an active paid plan. Protection is included on all plans.",
     "proxyNotWorking": "The selected proxy isn't working, so the profile wasn't created.",
     "proxyPaymentRequired": "The selected proxy requires payment (402) — its subscription may have expired — so the profile wasn't created.",
     "vpnNotWorking": "The selected VPN isn't working, so the profile wasn't created.",
@@ -1802,7 +1739,8 @@
     "updateChecksumsUnavailable": "The update {{version}} could not be verified because its checksum file could not be retrieved. The update was not installed; it will be retried later.",
     "updateChecksumMismatch": "The downloaded update file {{file}} failed checksum verification and was discarded. Please try again.",
     "nameCannotBeEmpty": "Name cannot be empty",
-    "wayfernVersionNotAvailable": "Wayfern version {{requested}} is not available for download. The current version is {{current}}."
+    "wayfernVersionNotAvailable": "Wayfern version {{requested}} is not available for download. The current version is {{current}}.",
+    "crossOsFingerprintUnsupported": "Cross-OS fingerprinting is not supported by this Wayfern build."
   },
   "rail": {
     "profiles": "Profiles",
@@ -1819,7 +1757,7 @@
     },
     "network": "Network",
     "integrations": "Integrations",
-    "account": "Account"
+    "sync": "Sync"
   },
   "pageTitle": {
     "proxies": "Network",
@@ -1828,9 +1766,9 @@
     "vpns": "Network",
     "settings": "Settings",
     "integrations": "Integrations",
-    "account": "Account",
     "import": "Import profile",
-    "shortcuts": "Keyboard shortcuts"
+    "shortcuts": "Keyboard shortcuts",
+    "sync": "Sync"
   },
   "encryption": {
     "required": {
@@ -1854,39 +1792,6 @@
         "extension_groups": "extension groups"
       }
     }
-  },
-  "account": {
-    "refreshed": "Account refreshed",
-    "loggedOut": "Logged out",
-    "signedOut": "Signed out",
-    "signedOutDescription": "Sign in to enable cloud sync, encrypted profiles, and team features.",
-    "plan": "Plan: {{plan}} · {{period}}",
-    "refresh": "Refresh",
-    "logout": "Sign out",
-    "signIn": "Sign in",
-    "fields": {
-      "plan": "Plan",
-      "status": "Status",
-      "teamRole": "Team role",
-      "period": "Billing period",
-      "device": "Device"
-    },
-    "tabs": {
-      "account": "Account",
-      "selfHosted": "Self-hosted"
-    },
-    "selfHosted": {
-      "title": "Self-hosted sync server",
-      "description": "Point Donut at your own donut-sync server to sync profiles, proxies, groups, and extensions without using the hosted cloud.",
-      "disabledWhileLoggedIn": "Self-hosted sync is unavailable while you're signed into your Donut account. Sign out to use a custom server.",
-      "connectionStatus": "Connection:",
-      "statusUnknown": "Untested",
-      "testConnection": "Test connection",
-      "disconnect": "Disconnect"
-    },
-    "deviceOrdinal": "{{ordinal}} of {{count}}",
-    "automationPrimaryOnly": "Browser automation runs only on your primary device (Device 1). Sign out there to use it here.",
-    "automationActiveHere": "Browser automation is active on this device."
   },
   "shortcutsPage": {
     "title": "Keyboard shortcuts",
@@ -1916,8 +1821,8 @@
     "goExtensions": "Go to Extensions",
     "goGroups": "Go to Groups",
     "goIntegrations": "Go to Integrations",
-    "goAccount": "Go to Account",
-    "goSettings": "Go to Settings"
+    "goSettings": "Go to Settings",
+    "goSync": "Go to Sync"
   },
   "closeConfirm": {
     "title": "Close Donut Browser?",
@@ -1994,21 +1899,7 @@
         "groups": "Profile Groups",
         "cookies": "Cookie Import & Export"
       }
-    },
-    "license": {
-      "title": "Licensing",
-      "body": "Donut Browser is open source and free to use.",
-      "agree": "I understand",
-      "personalTitle": "Personal use",
-      "personalDesc": "Free forever.",
-      "commercialTitle": "Commercial use",
-      "trialBadge": "2 weeks free",
-      "commercialDesc": "Free for a 2-week evaluation. After that, a paid plan keeps the project maintained and thriving."
     }
-  },
-  "wayfernBlocked": {
-    "title": "Browser automation paused",
-    "description": "Your account was temporarily restricted from Pro browser features, usually from signing in on multiple devices at once. Sign out of other devices, then relaunch the profile to restore it."
   },
   "wayfernConfigDialog": {
     "titleView": "View Fingerprint Settings - {{name}} ({{browser}})",

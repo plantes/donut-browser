@@ -62,7 +62,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ProBadge } from "@/components/ui/pro-badge";
 import {
   Table,
   TableBody,
@@ -77,11 +76,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useBrowserState } from "@/hooks/use-browser-state";
-import { useCloudAuth } from "@/hooks/use-cloud-auth";
 import { useProxyEvents } from "@/hooks/use-proxy-events";
 import { useScrollFade } from "@/hooks/use-scroll-fade";
 import { useTableSorting } from "@/hooks/use-table-sorting";
-import { useTeamLocks } from "@/hooks/use-team-locks";
 import { useVpnEvents } from "@/hooks/use-vpn-events";
 import {
   getBrowserDisplayName,
@@ -94,7 +91,6 @@ import { cn } from "@/lib/utils";
 import type {
   BrowserProfile,
   ExtensionGroup,
-  LocationItem,
   ProxyCheckResult,
   StoredProxy,
   SyncSessionInfo,
@@ -224,19 +220,6 @@ interface TableMeta {
   onToggleProfileSync?: (profile: BrowserProfile) => void;
   crossOsUnlocked?: boolean;
   syncUnlocked?: boolean;
-
-  // Country proxy creation (inline in proxy dropdown)
-  countries: LocationItem[];
-  canCreateLocationProxy: boolean;
-  loadCountries: () => Promise<void>;
-  handleCreateCountryProxy: (
-    profileId: string,
-    country: LocationItem,
-  ) => Promise<void>;
-
-  // Team locks
-  isProfileLockedByAnother: (profileId: string) => boolean;
-  getProfileLockEmail: (profileId: string) => string | undefined;
 
   // Synchronizer
   getProfileSyncInfo: (profileId: string) =>
@@ -1143,7 +1126,6 @@ interface ProfilesDataTableProps {
   onBulkCopyCookies?: () => void;
   onBulkRun?: () => void;
   onBulkStop?: () => void;
-  bulkActionsUnlocked?: boolean;
   onBulkExtensionGroupAssignment?: () => void;
   onAssignExtensionGroup?: (profileIds: string[]) => void;
   onOpenProfileSyncDialog?: (profile: BrowserProfile) => void;
@@ -1191,7 +1173,6 @@ export function ProfilesDataTable({
   onBulkCopyCookies,
   onBulkRun,
   onBulkStop,
-  bulkActionsUnlocked = false,
   onBulkExtensionGroupAssignment,
   onAssignExtensionGroup,
   onOpenProfileSyncDialog,
@@ -1309,8 +1290,6 @@ export function ProfilesDataTable({
 
   const { storedProxies } = useProxyEvents();
   const { vpnConfigs } = useVpnEvents();
-  const { user } = useCloudAuth();
-  const { isProfileLocked, getLockInfo } = useTeamLocks(user?.id);
 
   const [proxyOverrides, setProxyOverrides] = React.useState<
     Record<string, string | null>
@@ -1352,10 +1331,6 @@ export function ProfilesDataTable({
     Record<string, { status: string; error?: string }>
   >({});
 
-  // Country proxy creation state (for inline proxy creation in dropdown)
-  const [countries, setCountries] = React.useState<LocationItem[]>([]);
-  const [countriesLoaded, setCountriesLoaded] = React.useState(false);
-
   // Extension groups for the Ext column lookup. Refreshed when the
   // backend emits 'extensions-changed' (group rename/create/delete).
   const [extensionGroups, setExtensionGroups] = React.useState<
@@ -1385,19 +1360,6 @@ export function ProfilesDataTable({
       unlisten?.();
     };
   }, []);
-  const canCreateLocationProxy = false;
-
-  const loadCountries = React.useCallback(async () => {
-    if (countriesLoaded || !canCreateLocationProxy) return;
-    try {
-      const data = await invoke<LocationItem[]>("cloud_get_countries");
-      setCountries(data);
-      setCountriesLoaded(true);
-    } catch (e) {
-      console.error("Failed to load countries:", e);
-    }
-  }, [countriesLoaded]);
-
   // Load cached check results for proxies
   React.useEffect(() => {
     const loadCachedResults = async () => {
@@ -1473,36 +1435,6 @@ export function ProfilesDataTable({
       }
     },
     [],
-  );
-
-  const handleCreateCountryProxy = React.useCallback(
-    async (profileId: string, country: LocationItem) => {
-      try {
-        await invoke("create_cloud_location_proxy", {
-          name: country.name,
-          country: country.code,
-          region: null,
-          city: null,
-          isp: null,
-        });
-        await emit("stored-proxies-changed");
-        // Wait briefly for proxy list to update, then find and assign the new proxy
-        await new Promise((r) => setTimeout(r, 200));
-        const updatedProxies =
-          await invoke<StoredProxy[]>("get_stored_proxies");
-        const newProxy = updatedProxies.find(
-          (p: StoredProxy) =>
-            p.is_cloud_derived && p.geo_country === country.code,
-        );
-        if (newProxy) {
-          await handleProxySelection(profileId, newProxy.id);
-        }
-        setOpenProxySelectorFor(null);
-      } catch (error) {
-        console.error("Failed to create country proxy:", error);
-      }
-    },
-    [handleProxySelection],
   );
 
   // Use shared browser state hook
@@ -1970,17 +1902,6 @@ export function ProfilesDataTable({
       crossOsUnlocked,
       syncUnlocked,
 
-      // Country proxy creation
-      countries,
-      canCreateLocationProxy,
-      loadCountries,
-      handleCreateCountryProxy,
-
-      // Team locks
-      isProfileLockedByAnother: isProfileLocked,
-      getProfileLockEmail: (profileId: string) =>
-        getLockInfo(profileId)?.lockedByEmail,
-
       // Synchronizer
       getProfileSyncInfo: getProfileSyncInfo ?? (() => undefined),
       onLaunchWithSync:
@@ -2038,11 +1959,6 @@ export function ProfilesDataTable({
       onToggleProfileSync,
       crossOsUnlocked,
       syncUnlocked,
-      countries,
-      loadCountries,
-      handleCreateCountryProxy,
-      isProfileLocked,
-      getLockInfo,
       getProfileSyncInfo,
       onLaunchWithSync,
     ],
@@ -2238,16 +2154,11 @@ export function ProfilesDataTable({
             meta.isClient && meta.runningProfiles.has(profile.id);
           const isLaunching = meta.launchingProfiles.has(profile.id);
           const isStopping = meta.stoppingProfiles.has(profile.id);
-          const isLockedByAnother = meta.isProfileLockedByAnother(profile.id);
           const isSyncing = meta.syncStatuses[profile.id]?.status === "syncing";
           const canLaunch =
-            meta.browserState.canLaunchProfile(profile) &&
-            !isLockedByAnother &&
-            !isSyncing;
-          const lockEmail = meta.getProfileLockEmail(profile.id);
-          const tooltipContent = isLockedByAnother
-            ? meta.t("sync.team.cannotLaunchLocked", { email: lockEmail })
-            : meta.browserState.getLaunchTooltipContent(profile);
+            meta.browserState.canLaunchProfile(profile) && !isSyncing;
+          const tooltipContent =
+            meta.browserState.getLaunchTooltipContent(profile);
 
           const handleProfileStop = async (profile: BrowserProfile) => {
             meta.setStoppingProfiles((prev: Set<string>) =>
@@ -2538,8 +2449,6 @@ export function ProfilesDataTable({
           const isStopping = meta.stoppingProfiles.has(profile.id);
           const isDisabled =
             isRunning || isLaunching || isStopping || isCrossOsBlocked;
-          const lockedEmail = meta.getProfileLockEmail(profile.id);
-          const isLocked = meta.isProfileLockedByAnother(profile.id);
 
           return (
             <div className="flex max-w-full min-w-0 items-center gap-1.5 overflow-hidden">
@@ -2569,18 +2478,6 @@ export function ProfilesDataTable({
               >
                 {display}
               </button>
-              {isLocked && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <LuLock className="size-3 text-muted-foreground" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {meta.t("sync.team.profileLocked", { email: lockedEmail })}
-                  </TooltipContent>
-                </Tooltip>
-              )}
             </div>
           );
         },
@@ -2743,15 +2640,7 @@ export function ProfilesDataTable({
                   >
                     <Command>
                       <CommandInput
-                        placeholder={
-                          meta.canCreateLocationProxy
-                            ? t("createProfile.proxy.searchWithCountries")
-                            : t("createProfile.proxy.search")
-                        }
-                        onFocus={() => {
-                          if (meta.canCreateLocationProxy)
-                            void meta.loadCountries();
-                        }}
+                        placeholder={t("createProfile.proxy.search")}
                       />
                       <CommandList>
                         <CommandEmpty>
@@ -2836,37 +2725,6 @@ export function ProfilesDataTable({
                             ))}
                           </CommandGroup>
                         )}
-                        {meta.canCreateLocationProxy &&
-                          meta.countries.length > 0 && (
-                            <CommandGroup
-                              heading={t("profileTable.createByCountryHeading")}
-                            >
-                              {meta.countries
-                                .filter(
-                                  (c) =>
-                                    !meta.storedProxies.some(
-                                      (p) =>
-                                        p.is_cloud_derived &&
-                                        p.geo_country === c.code,
-                                    ),
-                                )
-                                .map((country) => (
-                                  <CommandItem
-                                    key={`country-${country.code}`}
-                                    value={`create-${country.name}`}
-                                    onSelect={() =>
-                                      void meta.handleCreateCountryProxy(
-                                        profile.id,
-                                        country,
-                                      )
-                                    }
-                                  >
-                                    <span className="mr-2 size-4" />+{" "}
-                                    {country.name}
-                                  </CommandItem>
-                                ))}
-                            </CommandGroup>
-                          )}
                       </CommandList>
                     </Command>
                   </PopoverContent>
@@ -3301,39 +3159,23 @@ export function ProfilesDataTable({
         {onBulkRun && (
           <span className="relative inline-flex">
             <DataTableActionBarAction
-              tooltip={
-                bulkActionsUnlocked
-                  ? t("profiles.actionBar.runSelected")
-                  : t("profiles.actionBar.proRequired")
-              }
-              onClick={bulkActionsUnlocked ? onBulkRun : undefined}
-              disabled={!bulkActionsUnlocked}
+              tooltip={t("profiles.actionBar.runSelected")}
+              onClick={onBulkRun}
               size="icon"
             >
               <LuPlay className="fill-current" />
             </DataTableActionBarAction>
-            {!bulkActionsUnlocked && (
-              <ProBadge className="pointer-events-none absolute -top-2 -right-2" />
-            )}
           </span>
         )}
         {onBulkStop && (
           <span className="relative inline-flex">
             <DataTableActionBarAction
-              tooltip={
-                bulkActionsUnlocked
-                  ? t("profiles.actionBar.stopSelected")
-                  : t("profiles.actionBar.proRequired")
-              }
-              onClick={bulkActionsUnlocked ? onBulkStop : undefined}
-              disabled={!bulkActionsUnlocked}
+              tooltip={t("profiles.actionBar.stopSelected")}
+              onClick={onBulkStop}
               size="icon"
             >
               <LuSquare className="fill-current" />
             </DataTableActionBarAction>
-            {!bulkActionsUnlocked && (
-              <ProBadge className="pointer-events-none absolute -top-2 -right-2" />
-            )}
           </span>
         )}
         {onBulkGroupAssignment && (

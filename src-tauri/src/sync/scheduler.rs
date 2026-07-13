@@ -160,18 +160,6 @@ impl SyncScheduler {
     }
     drop(running);
 
-    // Check if locked by another device (profile in use remotely)
-    if crate::team_lock::PROFILE_LOCK
-      .is_locked_by_another(profile_id)
-      .await
-    {
-      log::debug!(
-        "Profile {} is locked on another device, treating as running",
-        profile_id
-      );
-      return true;
-    }
-
     false
   }
 
@@ -280,10 +268,7 @@ impl SyncScheduler {
     for profile in sync_enabled_profiles {
       let profile_id = profile.id.to_string();
       let is_running = profile.process_id.is_some();
-      let is_team_locked = crate::team_lock::TEAM_LOCK
-        .is_locked_by_another(&profile_id)
-        .await;
-      let should_wait = is_running || is_team_locked;
+      let should_wait = is_running;
 
       // Track running state in the scheduler
       if is_running {
@@ -294,11 +279,7 @@ impl SyncScheduler {
         log::info!(
           "Profile '{}' is {} — will sync after it becomes available",
           profile.name,
-          if is_running {
-            "running locally"
-          } else {
-            "locked by a team member"
-          }
+          "running locally"
         );
       }
 
